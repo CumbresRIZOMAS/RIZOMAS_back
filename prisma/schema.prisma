@@ -1,0 +1,525 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+model CropCycle {
+  id               String    @id @default(uuid()) @db.Uuid
+  cropId           String    @db.Uuid
+  plantingDate     DateTime?
+  productionStart  DateTime?
+  productionEnd    DateTime?
+  harvestFrequency String?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  crop             Crop      @relation(fields: [cropId], references: [id], onDelete: Cascade)
+  harvests         Harvest[]
+  labors           Labor[]
+
+  @@index([cropId])
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model EnvironmentalCondition {
+  id           String   @id @default(uuid()) @db.Uuid
+  farmId       String   @db.Uuid
+  lotId        String?  @db.Uuid
+  observedAt   DateTime
+  type         String
+  value        Decimal? @db.Decimal(14, 4)
+  unit         String?
+  observations String?
+  createdAt    DateTime @default(now())
+  farm         Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  lot          Lot?     @relation(fields: [lotId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, observedAt])
+  @@index([lotId, observedAt])
+}
+
+enum Role {
+  ADMIN_CUMBRES
+  ADMIN_FINCA
+  TECNICO
+  AGRICULTOR
+  PROVEEDOR
+  COMPRADOR_CERTIFICADORA
+  CLIENTE
+  PUBLICO
+}
+
+enum FarmType {
+  CONVENCIONAL
+  EN_TRANSICION
+  REGENERATIVA
+}
+
+enum AgronomicManagementType {
+  LIMPIEZA
+  PODA
+  ABONO
+  REVISION
+  RIEGO
+  FERTILIZACION
+  CONTROL_PLAGAS
+  OTRO
+}
+
+enum LaborType {
+  SIEMBRA
+  COSECHA
+  COMPRA
+  VENTA
+  MANEJO_AGRONOMICO
+  APLICACION_BIOINSUMO
+  PROCESO_CAFE
+  OTRO
+}
+
+enum EvidenceStatus {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+}
+
+enum Visibility {
+  PRIVADA
+  FINCA
+  ORGANIZACION
+  PUBLICA
+}
+
+model User {
+  id          String          @id @default(uuid()) @db.Uuid
+  authUserId  String?         @unique
+  name        String
+  email       String          @unique
+  role        Role            @default(AGRICULTOR)
+  active      Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  ownedFarms  Farm[]          @relation("FarmOwner")
+  farmMembers FarmUser[]
+  audits      AuditLog[]
+  syncOps     SyncOperation[]
+}
+
+model FarmUser {
+  id        String   @id @default(uuid()) @db.Uuid
+  farmId    String   @db.Uuid
+  userId    String   @db.Uuid
+  role      Role
+  createdAt DateTime @default(now())
+  farm      Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([farmId, userId])
+  @@index([userId])
+}
+
+model Farm {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  ownerId                 String?                  @db.Uuid
+  name                    String
+  identifier              String?
+  municipality            String?
+  region                  String?
+  areaHa                  Decimal?                 @db.Decimal(12, 2)
+  climate                 String?
+  farmType                FarmType                 @default(EN_TRANSICION)
+  exactLocation           Json?
+  publicLocation          Json?
+  locationVisibility      Visibility               @default(PRIVADA)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  owner                   User?                    @relation("FarmOwner", fields: [ownerId], references: [id])
+  members                 FarmUser[]
+  lots                    Lot[]
+  labors                  Labor[]
+  soilAnalyses            SoilAnalysis[]
+  purchases               Purchase[]
+  sales                   Sale[]
+  workers                 Worker[]
+  coffeeProcesses         CoffeeProcess[]
+  evidences               Evidence[]
+  environmentalConditions EnvironmentalCondition[]
+  publications            Publication[]
+  indicators              IndicatorValue[]
+}
+
+model Lot {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  farmId                  String                   @db.Uuid
+  name                    String
+  identifier              String?
+  areaHa                  Decimal?                 @db.Decimal(12, 2)
+  location                Json?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  farm                    Farm                     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  crops                   Crop[]
+  labors                  Labor[]
+  soilAnalyses            SoilAnalysis[]
+  evidences               Evidence[]
+  environmentalConditions EnvironmentalCondition[]
+  bioinputApplications    BioinputApplication[]
+  indicators              IndicatorValue[]
+  bioinputs               Bioinput[]
+
+  @@index([farmId])
+}
+
+model Crop {
+  id           String      @id @default(uuid()) @db.Uuid
+  lotId        String      @db.Uuid
+  species      String
+  variety      String?
+  plantingDate DateTime?
+  status       String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  lot          Lot         @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  labors       Labor[]
+  harvests     Harvest[]
+  cycles       CropCycle[]
+
+  @@index([lotId])
+}
+
+model Worker {
+  id        String   @id @default(uuid()) @db.Uuid
+  farmId    String?  @db.Uuid
+  name      String
+  document  String?
+  contact   String?
+  createdAt DateTime @default(now())
+  farm      Farm?    @relation(fields: [farmId], references: [id], onDelete: SetNull)
+  labors    Labor[]
+}
+
+model Labor {
+  id                   String                @id @default(uuid()) @db.Uuid
+  farmId               String                @db.Uuid
+  lotId                String?               @db.Uuid
+  cropId               String?               @db.Uuid
+  cycleId              String?               @db.Uuid
+  workerId             String?               @db.Uuid
+  type                 LaborType
+  name                 String
+  startDate            DateTime
+  endDate              DateTime?
+  durationMin          Int?
+  observations         String?
+  metadata             Json?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  farm                 Farm                  @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  lot                  Lot?                  @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  crop                 Crop?                 @relation(fields: [cropId], references: [id], onDelete: SetNull)
+  cycle                CropCycle?            @relation(fields: [cycleId], references: [id], onDelete: SetNull)
+  worker               Worker?               @relation(fields: [workerId], references: [id], onDelete: SetNull)
+  harvest              Harvest?
+  purchase             Purchase?
+  sale                 Sale?
+  management           AgronomicManagement?
+  evidences            Evidence[]
+  bioinputApplications BioinputApplication[]
+
+  @@index([farmId, startDate])
+  @@index([lotId])
+  @@index([cropId])
+}
+
+model Harvest {
+  id              String          @id @default(uuid()) @db.Uuid
+  laborId         String          @unique @db.Uuid
+  cropId          String?         @db.Uuid
+  quantity        Decimal         @db.Decimal(12, 2)
+  unit            String
+  quality         String?
+  destination     String?
+  createdAt       DateTime        @default(now())
+  labor           Labor           @relation(fields: [laborId], references: [id], onDelete: Cascade)
+  crop            Crop?           @relation(fields: [cropId], references: [id], onDelete: SetNull)
+  coffeeProcesses CoffeeProcess[]
+  productFinals   ProductFinal[]
+  evidences       Evidence[]
+  publications    Publication[]
+  cropCycle       CropCycle?      @relation(fields: [cropCycleId], references: [id])
+  cropCycleId     String?         @db.Uuid
+}
+
+model Purchase {
+  id         String    @id @default(uuid()) @db.Uuid
+  farmId     String    @db.Uuid
+  laborId    String?   @unique @db.Uuid
+  supplierId String?   @db.Uuid
+  date       DateTime
+  itemName   String
+  isBioinput Boolean   @default(false)
+  quantity   Decimal   @db.Decimal(12, 2)
+  unit       String?
+  value      Decimal?  @db.Decimal(14, 2)
+  createdAt  DateTime  @default(now())
+  farm       Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  labor      Labor?    @relation(fields: [laborId], references: [id], onDelete: SetNull)
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+}
+
+model Sale {
+  id          String   @id @default(uuid()) @db.Uuid
+  farmId      String   @db.Uuid
+  laborId     String?  @unique @db.Uuid
+  date        DateTime
+  productName String
+  buyer       String?
+  quantity    Decimal  @db.Decimal(12, 2)
+  unit        String?
+  value       Decimal? @db.Decimal(14, 2)
+  createdAt   DateTime @default(now())
+  farm        Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  labor       Labor?   @relation(fields: [laborId], references: [id], onDelete: SetNull)
+}
+
+model Supplier {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String
+  inputType String?
+  contact   String?
+  createdAt DateTime   @default(now())
+  purchases Purchase[]
+}
+
+model SoilAnalysis {
+  id              String           @id @default(uuid()) @db.Uuid
+  farmId          String           @db.Uuid
+  lotId           String?          @db.Uuid
+  date            DateTime
+  laboratory      String?
+  parameters      Json
+  observations    String?
+  createdAt       DateTime         @default(now())
+  farm            Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  lot             Lot?             @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  diagnostics     Diagnosis[]
+  recommendations Recommendation[]
+}
+
+model Diagnosis {
+  id             String       @id @default(uuid()) @db.Uuid
+  soilAnalysisId String       @db.Uuid
+  parameter      String
+  status         String
+  createdAt      DateTime     @default(now())
+  soilAnalysis   SoilAnalysis @relation(fields: [soilAnalysisId], references: [id], onDelete: Cascade)
+}
+
+model Recommendation {
+  id             String        @id @default(uuid()) @db.Uuid
+  soilAnalysisId String?       @db.Uuid
+  type           String
+  description    String
+  createdAt      DateTime      @default(now())
+  soilAnalysis   SoilAnalysis? @relation(fields: [soilAnalysisId], references: [id], onDelete: SetNull)
+}
+
+model Bioinput {
+  id           String                @id @default(uuid()) @db.Uuid
+  name         String
+  recipe       Json?
+  ingredients  Json?
+  preparation  String?
+  producedAt   DateTime?
+  appliedAt    DateTime?
+  appliedLotId String?               @db.Uuid
+  quantity     Decimal?              @db.Decimal(12, 2)
+  unit         String?
+  createdAt    DateTime              @default(now())
+  appliedLot   Lot?                  @relation(fields: [appliedLotId], references: [id], onDelete: SetNull)
+  applications BioinputApplication[]
+}
+
+model BioinputApplication {
+  id           String   @id @default(uuid()) @db.Uuid
+  bioinputId   String   @db.Uuid
+  lotId        String   @db.Uuid
+  laborId      String?  @db.Uuid
+  appliedAt    DateTime
+  quantity     Decimal? @db.Decimal(12, 2)
+  unit         String?
+  observations String?
+  bioinput     Bioinput @relation(fields: [bioinputId], references: [id], onDelete: Cascade)
+  lot          Lot      @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  labor        Labor?   @relation(fields: [laborId], references: [id], onDelete: SetNull)
+
+  @@index([lotId, appliedAt])
+}
+
+model AgronomicManagement {
+  id        String                  @id @default(uuid()) @db.Uuid
+  laborId   String                  @unique @db.Uuid
+  type      AgronomicManagementType
+  quantity  Decimal?                @db.Decimal(12, 2)
+  createdAt DateTime                @default(now())
+  labor     Labor                   @relation(fields: [laborId], references: [id], onDelete: Cascade)
+}
+
+model CoffeeProcess {
+  id           String         @id @default(uuid()) @db.Uuid
+  farmId       String         @db.Uuid
+  harvestId    String?        @db.Uuid
+  currentStage String
+  startedAt    DateTime
+  finishedAt   DateTime?
+  notes        String?
+  createdAt    DateTime       @default(now())
+  farm         Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  harvest      Harvest?       @relation(fields: [harvestId], references: [id], onDelete: SetNull)
+  products     ProductFinal[]
+  evidences    Evidence[]
+}
+
+model ProductFinal {
+  id              String          @id @default(uuid()) @db.Uuid
+  harvestId       String?         @db.Uuid
+  coffeeProcessId String?         @db.Uuid
+  finalizedAt     DateTime?
+  destination     String?
+  createdAt       DateTime        @default(now())
+  harvest         Harvest?        @relation(fields: [harvestId], references: [id], onDelete: SetNull)
+  coffeeProcess   CoffeeProcess?  @relation(fields: [coffeeProcessId], references: [id], onDelete: SetNull)
+  certifications  Certification[]
+  evidences       Evidence[]
+}
+
+model Certification {
+  id             String       @id @default(uuid()) @db.Uuid
+  productFinalId String       @db.Uuid
+  certifier      String
+  status         String
+  createdAt      DateTime     @default(now())
+  productFinal   ProductFinal @relation(fields: [productFinalId], references: [id], onDelete: Cascade)
+}
+
+model Evidence {
+  id              String                @id @default(uuid()) @db.Uuid
+  farmId          String?               @db.Uuid
+  lotId           String?               @db.Uuid
+  laborId         String?               @db.Uuid
+  harvestId       String?               @db.Uuid
+  coffeeProcessId String?               @db.Uuid
+  productFinalId  String?               @db.Uuid
+  objectKey       String
+  url             String?
+  capturedAt      DateTime?
+  geolocation     Json?
+  visibility      Visibility            @default(PRIVADA)
+  status          EvidenceStatus        @default(PENDIENTE)
+  moderation      Json?
+  createdAt       DateTime              @default(now())
+  farm            Farm?                 @relation(fields: [farmId], references: [id], onDelete: SetNull)
+  lot             Lot?                  @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  labor           Labor?                @relation(fields: [laborId], references: [id], onDelete: SetNull)
+  harvest         Harvest?              @relation(fields: [harvestId], references: [id], onDelete: SetNull)
+  coffeeProcess   CoffeeProcess?        @relation(fields: [coffeeProcessId], references: [id], onDelete: SetNull)
+  productFinal    ProductFinal?         @relation(fields: [productFinalId], references: [id], onDelete: SetNull)
+  publications    PublicationEvidence[]
+
+  @@index([harvestId])
+  @@index([coffeeProcessId])
+  @@index([productFinalId])
+}
+
+model Report {
+  id          String    @id @default(uuid()) @db.Uuid
+  type        String
+  periodStart DateTime?
+  periodEnd   DateTime?
+  totalCosts  Decimal?  @db.Decimal(14, 2)
+  information Json
+  createdAt   DateTime  @default(now())
+}
+
+model Publication {
+  id             String                @id @default(uuid()) @db.Uuid
+  farmId         String                @db.Uuid
+  harvestId      String?               @db.Uuid
+  title          String
+  region         String?
+  quantity       Decimal?              @db.Decimal(12, 2)
+  unit           String?
+  publicLocation Json?
+  publishedAt    DateTime?
+  active         Boolean               @default(false)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  farm           Farm                  @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  harvest        Harvest?              @relation(fields: [harvestId], references: [id], onDelete: SetNull)
+  evidences      PublicationEvidence[]
+
+  @@index([farmId, active])
+}
+
+model PublicationEvidence {
+  publicationId String      @db.Uuid
+  evidenceId    String      @db.Uuid
+  publication   Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  evidence      Evidence    @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@id([publicationId, evidenceId])
+}
+
+model IndicatorDefinition {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique
+  category    String
+  description String?
+  unit        String?
+  createdAt   DateTime         @default(now())
+  values      IndicatorValue[]
+}
+
+model IndicatorValue {
+  id           String              @id @default(uuid()) @db.Uuid
+  definitionId String              @db.Uuid
+  farmId       String              @db.Uuid
+  lotId        String?             @db.Uuid
+  periodStart  DateTime?
+  periodEnd    DateTime?
+  value        Decimal             @db.Decimal(14, 4)
+  metadata     Json?
+  createdAt    DateTime            @default(now())
+  definition   IndicatorDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  farm         Farm                @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  lot          Lot?                @relation(fields: [lotId], references: [id], onDelete: SetNull)
+
+  @@index([farmId, periodStart])
+  @@index([lotId, periodStart])
+}
+
+model SyncOperation {
+  id         String   @id @default(uuid()) @db.Uuid
+  clientUuid String   @unique
+  userId     String?  @db.Uuid
+  entity     String
+  operation  String
+  payload    Json
+  appliedAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  entity    String
+  entityId  String?
+  action    String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
