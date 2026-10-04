@@ -8,6 +8,10 @@ export class SoilParameterDto {
   value: number;
 
   @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @IsOptional()
   min?: number;
 
   @IsOptional()
@@ -44,6 +48,10 @@ export class CreateRecommendationDto {
   @IsOptional()
   @IsUUID()
   soilAnalysisId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  diagnosisId?: string;
 
   @IsString()
   type: string;
