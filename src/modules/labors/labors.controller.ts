@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
 import { CreateAgronomicManagementDto, CreateHarvestDto, CreateLaborDto } from './dto/labor.dto';
@@ -10,20 +11,20 @@ export class LaborsController {
 
   @Post('labors')
   @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
-  create(@Body() dto: CreateLaborDto) {
-    return this.labors.create(dto);
+  create(@Body() dto: CreateLaborDto, @CurrentUser() user: RequestUser) {
+    return this.labors.create(dto, user);
   }
 
   @Post('harvests')
   @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
-  createHarvest(@Body() dto: CreateHarvestDto) {
-    return this.labors.createHarvest(dto);
+  createHarvest(@Body() dto: CreateHarvestDto, @CurrentUser() user: RequestUser) {
+    return this.labors.createHarvest(dto, user);
   }
 
   @Post('agronomic-management')
   @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
-  createAgronomicManagement(@Body() dto: CreateAgronomicManagementDto) {
-    return this.labors.createAgronomicManagement(dto);
+  createAgronomicManagement(@Body() dto: CreateAgronomicManagementDto, @CurrentUser() user: RequestUser) {
+    return this.labors.createAgronomicManagement(dto, user);
   }
 
   @Get('farms/:farmId/labors')

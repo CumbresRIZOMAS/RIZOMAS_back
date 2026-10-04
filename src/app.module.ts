@@ -22,6 +22,7 @@ import { CyclesModule } from './modules/cycles/cycles.module';
 import { EnvironmentModule } from './modules/environment/environment.module';
 import { IndicatorsModule } from './modules/indicators/indicators.module';
 import { PublicationsModule } from './modules/publications/publications.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -50,5 +51,6 @@ import { PublicationsModule } from './modules/publications/publications.module';
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

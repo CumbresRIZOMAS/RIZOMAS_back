@@ -1,22 +1,38 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEvidenceDto, ModerateEvidenceDto } from './dto/evidence.dto';
+import { AuditService } from '../../common/services/audit.service';
+import { RequestUser } from '../../common/decorators/current-user.decorator';
 
 @Injectable()
 export class EvidenceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
-  create(dto: CreateEvidenceDto) {
-    return this.prisma.evidence.create({ data: dto as never });
+  async create(dto: CreateEvidenceDto, user: RequestUser) {
+    const evidence = await this.prisma.evidence.create({ data: dto as never });
+    await this.audit.record({ userId: user.appUserId ?? user.sub, entity: 'Evidence', entityId: evidence.id, action: 'CREATE', after: evidence });
+    return evidence;
   }
 
   pending() {
     return this.prisma.evidence.findMany({ where: { status: 'PENDIENTE' }, orderBy: { createdAt: 'asc' } });
   }
 
-  async moderate(id: string, dto: ModerateEvidenceDto) {
+  async moderate(id: string, dto: ModerateEvidenceDto, user: RequestUser) {
     await this.ensureExists(id);
-    return this.prisma.evidence.update({ where: { id }, data: dto as never });
+    const evidence = await this.prisma.evidence.update({
+      where: { id },
+      data: {
+        ...dto,
+        reviewedById: user.appUserId,
+        reviewedAt: new Date(),
+      } as never,
+    });
+    await this.audit.record({ userId: user.appUserId ?? user.sub, entity: 'Evidence', entityId: id, action: `MODERATE_${dto.status}`, after: evidence });
+    return evidence;
   }
 
   findPublic() {

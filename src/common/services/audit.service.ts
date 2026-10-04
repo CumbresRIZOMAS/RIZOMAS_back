@@ -13,6 +13,22 @@ export class AuditService {
     before?: unknown;
     after?: unknown;
   }) {
-    return this.prisma.auditLog.create({ data: input as never });
+    const user = input.userId
+      ? await this.prisma.user.findFirst({
+          where: { OR: [{ id: input.userId }, { authUserId: input.userId }] },
+          select: { id: true },
+        })
+      : null;
+
+    return this.prisma.auditLog.create({
+      data: {
+        entity: input.entity,
+        entityId: input.entityId,
+        action: input.action,
+        before: input.before as never,
+        after: input.after as never,
+        userId: user?.id,
+      },
+    });
   }
 }

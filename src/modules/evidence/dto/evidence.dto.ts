@@ -1,6 +1,6 @@
 import { EvidenceStatus, Visibility } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsDate, IsEnum, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDate, IsEnum, IsNumber, IsObject, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateEvidenceDto {
   @IsOptional()
@@ -14,6 +14,18 @@ export class CreateEvidenceDto {
   @IsOptional()
   @IsUUID()
   laborId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  harvestId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  coffeeProcessId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  productFinalId?: string;
 
   @IsString()
   objectKey: string;
@@ -43,4 +55,18 @@ export class ModerateEvidenceDto {
   @IsOptional()
   @IsObject()
   moderation?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  moderationScore?: number;
+
+  @IsOptional()
+  @IsString()
+  moderationEngine?: string;
+
+  @IsOptional()
+  @IsString()
+  rejectionReason?: string;
 }

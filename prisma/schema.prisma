@@ -82,8 +82,10 @@ enum LaborType {
 
 enum EvidenceStatus {
   PENDIENTE
+  EN_REVISION
   APROBADA
   RECHAZADA
+  CUARENTENA
 }
 
 enum Visibility {
@@ -94,18 +96,20 @@ enum Visibility {
 }
 
 model User {
-  id          String          @id @default(uuid()) @db.Uuid
-  authUserId  String?         @unique
-  name        String
-  email       String          @unique
-  role        Role            @default(AGRICULTOR)
-  active      Boolean         @default(true)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  ownedFarms  Farm[]          @relation("FarmOwner")
-  farmMembers FarmUser[]
-  audits      AuditLog[]
-  syncOps     SyncOperation[]
+  id               String          @id @default(uuid()) @db.Uuid
+  authUserId       String?         @unique
+  name             String
+  email            String          @unique
+  role             Role            @default(AGRICULTOR)
+  active           Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  ownedFarms       Farm[]          @relation("FarmOwner")
+  farmMembers      FarmUser[]
+  audits           AuditLog[]
+  syncOps          SyncOperation[]
+  reviewedEvidence Evidence[]      @relation("EvidenceReviewer")
+  soilAnalyses     SoilAnalysis[]
 }
 
 model FarmUser {
@@ -149,6 +153,7 @@ model Farm {
   environmentalConditions EnvironmentalCondition[]
   publications            Publication[]
   indicators              IndicatorValue[]
+  reports                 Report[]
 }
 
 model Lot {
@@ -303,28 +308,35 @@ model SoilAnalysis {
   parameters      Json
   observations    String?
   createdAt       DateTime         @default(now())
+  createdById     String?          @db.Uuid
   farm            Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  createdBy       User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
   lot             Lot?             @relation(fields: [lotId], references: [id], onDelete: SetNull)
   diagnostics     Diagnosis[]
   recommendations Recommendation[]
 }
 
 model Diagnosis {
-  id             String       @id @default(uuid()) @db.Uuid
-  soilAnalysisId String       @db.Uuid
-  parameter      String
-  status         String
-  createdAt      DateTime     @default(now())
-  soilAnalysis   SoilAnalysis @relation(fields: [soilAnalysisId], references: [id], onDelete: Cascade)
+  id              String           @id @default(uuid()) @db.Uuid
+  soilAnalysisId  String           @db.Uuid
+  parameter       String
+  status          String
+  referenceMin    Decimal?         @db.Decimal(14, 4)
+  referenceMax    Decimal?         @db.Decimal(14, 4)
+  createdAt       DateTime         @default(now())
+  soilAnalysis    SoilAnalysis     @relation(fields: [soilAnalysisId], references: [id], onDelete: Cascade)
+  recommendations Recommendation[]
 }
 
 model Recommendation {
   id             String        @id @default(uuid()) @db.Uuid
   soilAnalysisId String?       @db.Uuid
+  diagnosisId    String?       @db.Uuid
   type           String
   description    String
   createdAt      DateTime      @default(now())
   soilAnalysis   SoilAnalysis? @relation(fields: [soilAnalysisId], references: [id], onDelete: SetNull)
+  diagnosis      Diagnosis?    @relation(fields: [diagnosisId], references: [id], onDelete: SetNull)
 }
 
 model Bioinput {
@@ -406,28 +418,34 @@ model Certification {
 }
 
 model Evidence {
-  id              String                @id @default(uuid()) @db.Uuid
-  farmId          String?               @db.Uuid
-  lotId           String?               @db.Uuid
-  laborId         String?               @db.Uuid
-  harvestId       String?               @db.Uuid
-  coffeeProcessId String?               @db.Uuid
-  productFinalId  String?               @db.Uuid
-  objectKey       String
-  url             String?
-  capturedAt      DateTime?
-  geolocation     Json?
-  visibility      Visibility            @default(PRIVADA)
-  status          EvidenceStatus        @default(PENDIENTE)
-  moderation      Json?
-  createdAt       DateTime              @default(now())
-  farm            Farm?                 @relation(fields: [farmId], references: [id], onDelete: SetNull)
-  lot             Lot?                  @relation(fields: [lotId], references: [id], onDelete: SetNull)
-  labor           Labor?                @relation(fields: [laborId], references: [id], onDelete: SetNull)
-  harvest         Harvest?              @relation(fields: [harvestId], references: [id], onDelete: SetNull)
-  coffeeProcess   CoffeeProcess?        @relation(fields: [coffeeProcessId], references: [id], onDelete: SetNull)
-  productFinal    ProductFinal?         @relation(fields: [productFinalId], references: [id], onDelete: SetNull)
-  publications    PublicationEvidence[]
+  id               String                @id @default(uuid()) @db.Uuid
+  farmId           String?               @db.Uuid
+  lotId            String?               @db.Uuid
+  laborId          String?               @db.Uuid
+  harvestId        String?               @db.Uuid
+  coffeeProcessId  String?               @db.Uuid
+  productFinalId   String?               @db.Uuid
+  objectKey        String
+  url              String?
+  capturedAt       DateTime?
+  geolocation      Json?
+  visibility       Visibility            @default(PRIVADA)
+  status           EvidenceStatus        @default(PENDIENTE)
+  moderation       Json?
+  moderationScore  Decimal?              @db.Decimal(5, 4)
+  moderationEngine String?
+  rejectionReason  String?
+  reviewedById     String?               @db.Uuid
+  reviewedAt       DateTime?
+  createdAt        DateTime              @default(now())
+  farm             Farm?                 @relation(fields: [farmId], references: [id], onDelete: SetNull)
+  lot              Lot?                  @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  labor            Labor?                @relation(fields: [laborId], references: [id], onDelete: SetNull)
+  harvest          Harvest?              @relation(fields: [harvestId], references: [id], onDelete: SetNull)
+  coffeeProcess    CoffeeProcess?        @relation(fields: [coffeeProcessId], references: [id], onDelete: SetNull)
+  productFinal     ProductFinal?         @relation(fields: [productFinalId], references: [id], onDelete: SetNull)
+  reviewedBy       User?                 @relation("EvidenceReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  publications     PublicationEvidence[]
 
   @@index([harvestId])
   @@index([coffeeProcessId])
@@ -436,12 +454,14 @@ model Evidence {
 
 model Report {
   id          String    @id @default(uuid()) @db.Uuid
+  farmId      String?   @db.Uuid
   type        String
   periodStart DateTime?
   periodEnd   DateTime?
   totalCosts  Decimal?  @db.Decimal(14, 2)
   information Json
   createdAt   DateTime  @default(now())
+  farm        Farm?     @relation(fields: [farmId], references: [id], onDelete: SetNull)
 }
 
 model Publication {

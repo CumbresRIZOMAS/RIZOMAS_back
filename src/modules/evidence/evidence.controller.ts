@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
+import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { CreateEvidenceDto, ModerateEvidenceDto } from './dto/evidence.dto';
 import { EvidenceService } from './evidence.service';
 
@@ -11,8 +12,8 @@ export class EvidenceController {
 
   @Post()
   @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
-  create(@Body() dto: CreateEvidenceDto) {
-    return this.evidence.create(dto);
+  create(@Body() dto: CreateEvidenceDto, @CurrentUser() user: RequestUser) {
+    return this.evidence.create(dto, user);
   }
 
   @Get('moderation/pending')
@@ -23,8 +24,8 @@ export class EvidenceController {
 
   @Patch(':id/moderation')
   @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO)
-  moderate(@Param('id') id: string, @Body() dto: ModerateEvidenceDto) {
-    return this.evidence.moderate(id, dto);
+  moderate(@Param('id') id: string, @Body() dto: ModerateEvidenceDto, @CurrentUser() user: RequestUser) {
+    return this.evidence.moderate(id, dto, user);
   }
 
   @Public()
