@@ -2,6 +2,9 @@ import { Type } from 'class-transformer';
 import { IsDate, IsNumber, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateBioinputDto {
+  @IsUUID()
+  farmId: string;
+
   @IsString()
   name: string;
 
@@ -21,15 +24,6 @@ export class CreateBioinputDto {
   @Type(() => Date)
   @IsDate()
   producedAt?: Date;
-
-  @IsOptional()
-  @Type(() => Date)
-  @IsDate()
-  appliedAt?: Date;
-
-  @IsOptional()
-  @IsUUID()
-  appliedLotId?: string;
 
   @IsOptional()
   @IsNumber()

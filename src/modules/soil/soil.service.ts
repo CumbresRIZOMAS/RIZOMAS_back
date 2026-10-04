@@ -29,14 +29,14 @@ export class SoilService {
     return this.prisma.soilAnalysis.findMany({
       where: { farmId },
       orderBy: { date: 'desc' },
-      include: { diagnostics: true, recommendations: true },
+      include: { diagnostics: { include: { recommendations: true } }, recommendations: true },
     });
   }
 
   async findOne(id: string) {
     const analysis = await this.prisma.soilAnalysis.findUnique({
       where: { id },
-      include: { farm: true, lot: true, diagnostics: true, recommendations: true },
+      include: { farm: true, lot: true, diagnostics: { include: { recommendations: true } }, recommendations: true },
     });
     if (!analysis) throw new NotFoundException('Analisis de suelo no encontrado');
     return analysis;
@@ -55,6 +55,13 @@ export class SoilService {
       status = 'OPTIMO';
     }
 
-    return { parameter: parameter.name, status };
+    return {
+      parameter: parameter.name,
+      value: parameter.value,
+      unit: parameter.unit,
+      min: parameter.min,
+      max: parameter.max,
+      status,
+    };
   }
 }

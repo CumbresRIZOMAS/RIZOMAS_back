@@ -16,7 +16,7 @@ export class EvidenceService {
 
   async moderate(id: string, dto: ModerateEvidenceDto) {
     await this.ensureExists(id);
-    return this.prisma.evidence.update({ where: { id }, data: dto as never });
+    return this.prisma.evidence.update({ where: { id }, data: { ...dto, reviewedAt: new Date() } });
   }
 
   findPublic() {
