@@ -7,7 +7,8 @@
   "scripts": {
     "build": "prisma generate && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"prisma/**/*.prisma\"",
-    "start": "nest start",
+    "start": "node dist/main",
+    "start:local": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
@@ -28,7 +29,7 @@
     "@supabase/server": "^1.9.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
-    "jose": "^6.2.12",
+    "jose": "4.15.9",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
