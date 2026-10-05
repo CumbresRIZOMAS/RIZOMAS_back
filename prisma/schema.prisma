@@ -96,18 +96,20 @@ enum Visibility {
 }
 
 model User {
-  id          String          @id @default(uuid()) @db.Uuid
-  authUserId  String?         @unique
-  name        String
-  email       String          @unique
-  role        Role            @default(AGRICULTOR)
-  active      Boolean         @default(true)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  ownedFarms  Farm[]          @relation("FarmOwner")
-  farmMembers FarmUser[]
-  audits      AuditLog[]
-  syncOps     SyncOperation[]
+  id                    String          @id @default(uuid()) @db.Uuid
+  authUserId            String?         @unique
+  name                  String
+  email                 String          @unique
+  role                  Role            @default(AGRICULTOR)
+  active                Boolean         @default(true)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  ownedFarms            Farm[]          @relation("FarmOwner")
+  farmMembers           FarmUser[]
+  audits                AuditLog[]
+  syncOps               SyncOperation[]
+  soilAnalysesCreated   SoilAnalysis[]  @relation("SoilAnalysisCreatedBy")
+  soilAnalysesSubmitted SoilAnalysis[]  @relation("SoilAnalysisUser")
 }
 
 model FarmUser {
@@ -151,6 +153,7 @@ model Farm {
   environmentalConditions EnvironmentalCondition[]
   publications            Publication[]
   indicators              IndicatorValue[]
+  bioinputs               Bioinput[]
 }
 
 model Lot {
@@ -307,20 +310,21 @@ model SoilAnalysis {
   createdAt       DateTime         @default(now())
   createdById     String?          @db.Uuid
   farm            Farm             @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  createdBy       User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdBy       User?            @relation("SoilAnalysisCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   lot             Lot?             @relation(fields: [lotId], references: [id], onDelete: SetNull)
-  user            User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user            User?            @relation("SoilAnalysisUser", fields: [userId], references: [id], onDelete: SetNull)
   diagnostics     Diagnosis[]
   recommendations Recommendation[]
 }
 
 model Diagnosis {
-  id             String       @id @default(uuid()) @db.Uuid
-  soilAnalysisId String       @db.Uuid
-  parameter      String
-  status         String
-  createdAt      DateTime     @default(now())
-  soilAnalysis   SoilAnalysis @relation(fields: [soilAnalysisId], references: [id], onDelete: Cascade)
+  id              String           @id @default(uuid()) @db.Uuid
+  soilAnalysisId  String           @db.Uuid
+  parameter       String
+  status          String
+  createdAt       DateTime         @default(now())
+  soilAnalysis    SoilAnalysis     @relation(fields: [soilAnalysisId], references: [id], onDelete: Cascade)
+  recommendations Recommendation[]
 }
 
 model Recommendation {
@@ -331,6 +335,7 @@ model Recommendation {
   description    String
   createdAt      DateTime      @default(now())
   soilAnalysis   SoilAnalysis? @relation(fields: [soilAnalysisId], references: [id], onDelete: SetNull)
+  diagnosis      Diagnosis?    @relation(fields: [diagnosisId], references: [id], onDelete: SetNull)
 }
 
 model Bioinput {
