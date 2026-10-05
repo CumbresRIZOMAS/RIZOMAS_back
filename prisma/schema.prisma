@@ -96,20 +96,22 @@ enum Visibility {
 }
 
 model User {
-  id                    String          @id @default(uuid()) @db.Uuid
-  authUserId            String?         @unique
+  id                    String               @id @default(uuid()) @db.Uuid
+  authUserId            String?              @unique
   name                  String
-  email                 String          @unique
-  role                  Role            @default(AGRICULTOR)
-  active                Boolean         @default(true)
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
-  ownedFarms            Farm[]          @relation("FarmOwner")
+  email                 String               @unique
+  role                  Role                 @default(AGRICULTOR)
+  active                Boolean              @default(true)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  ownedFarms            Farm[]               @relation("FarmOwner")
   farmMembers           FarmUser[]
   audits                AuditLog[]
   syncOps               SyncOperation[]
-  soilAnalysesCreated   SoilAnalysis[]  @relation("SoilAnalysisCreatedBy")
-  soilAnalysesSubmitted SoilAnalysis[]  @relation("SoilAnalysisUser")
+  soilAnalysesCreated   SoilAnalysis[]       @relation("SoilAnalysisCreatedBy")
+  soilAnalysesSubmitted SoilAnalysis[]       @relation("SoilAnalysisUser")
+  evidencesReviewed     Evidence[]           @relation("EvidenceReviewer")
+  soilRangesCreated     SoilReferenceRange[]
 }
 
 model FarmUser {
@@ -154,6 +156,7 @@ model Farm {
   publications            Publication[]
   indicators              IndicatorValue[]
   bioinputs               Bioinput[]
+  reports                 Report[]
 }
 
 model Lot {
@@ -321,36 +324,77 @@ model Diagnosis {
   id              String           @id @default(uuid()) @db.Uuid
   soilAnalysisId  String           @db.Uuid
   parameter       String
+  value           Decimal?         @db.Decimal(14, 4)
+  unit            String?
+  /// Rango contra el que se comparó el valor (copiado al diagnosticar,
+  /// para que el resultado no cambie si después se edita el catálogo).
+  referenceMin    Decimal?         @db.Decimal(14, 4)
+  referenceMax    Decimal?         @db.Decimal(14, 4)
+  /// BAJO | OPTIMO | ALTO | SIN_REFERENCIA
   status          String
   createdAt       DateTime         @default(now())
   soilAnalysis    SoilAnalysis     @relation(fields: [soilAnalysisId], references: [id], onDelete: Cascade)
   recommendations Recommendation[]
+
+  @@index([soilAnalysisId])
 }
 
 model Recommendation {
   id             String        @id @default(uuid()) @db.Uuid
   soilAnalysisId String?       @db.Uuid
   diagnosisId    String?       @db.Uuid
+  /// Bioinsumo sugerido, cuando la recomendación es aplicar uno (RF-12).
+  bioinputId     String?       @db.Uuid
+  /// PRACTICA | BIOINSUMO
   type           String
   description    String
+  /// true si la generó el sistema a partir del diagnóstico.
+  automatic      Boolean       @default(false)
   createdAt      DateTime      @default(now())
   soilAnalysis   SoilAnalysis? @relation(fields: [soilAnalysisId], references: [id], onDelete: SetNull)
   diagnosis      Diagnosis?    @relation(fields: [diagnosisId], references: [id], onDelete: SetNull)
+  bioinput       Bioinput?     @relation(fields: [bioinputId], references: [id], onDelete: SetNull)
+
+  @@index([diagnosisId])
+  @@index([soilAnalysisId])
+}
+
+/// Rango de referencia de un parámetro de suelo (RF-11). Lo administran los
+/// técnicos desde el panel. crop vacío ("") aplica a cualquier cultivo; uno
+/// específico (p. ej. "Café arábica") tiene prioridad.
+model SoilReferenceRange {
+  id           String   @id @default(uuid()) @db.Uuid
+  /// Nombre normalizado (minúsculas, sin tildes) para comparar con el análisis.
+  parameterKey String
+  parameter    String
+  crop         String   @default("")
+  unit         String?
+  min          Decimal? @db.Decimal(14, 4)
+  max          Decimal? @db.Decimal(14, 4)
+  source       String?
+  notes        String?
+  createdById  String?  @db.Uuid
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdBy    User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([parameterKey, crop])
 }
 
 model Bioinput {
-  id           String                @id @default(uuid()) @db.Uuid
-  farmId       String                @db.Uuid
-  name         String
-  recipe       Json?
-  ingredients  Json?
-  preparation  String?
-  producedAt   DateTime?
-  quantity     Decimal?              @db.Decimal(12, 2)
-  unit         String?
-  createdAt    DateTime              @default(now())
-  farm         Farm                  @relation(fields: [farmId], references: [id], onDelete: Cascade)
-  applications BioinputApplication[]
+  id              String                @id @default(uuid()) @db.Uuid
+  farmId          String                @db.Uuid
+  name            String
+  recipe          Json?
+  ingredients     Json?
+  preparation     String?
+  producedAt      DateTime?
+  quantity        Decimal?              @db.Decimal(12, 2)
+  unit            String?
+  createdAt       DateTime              @default(now())
+  farm            Farm                  @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  applications    BioinputApplication[]
+  recommendations Recommendation[]
 
   @@index([farmId])
 }
@@ -418,28 +462,34 @@ model Certification {
 }
 
 model Evidence {
-  id              String                @id @default(uuid()) @db.Uuid
-  farmId          String?               @db.Uuid
-  lotId           String?               @db.Uuid
-  laborId         String?               @db.Uuid
-  harvestId       String?               @db.Uuid
-  coffeeProcessId String?               @db.Uuid
-  productFinalId  String?               @db.Uuid
-  objectKey       String
-  url             String?
-  capturedAt      DateTime?
-  geolocation     Json?
-  visibility      Visibility            @default(PRIVADA)
-  status          EvidenceStatus        @default(PENDIENTE)
-  moderation      Json?
-  createdAt       DateTime              @default(now())
-  farm            Farm?                 @relation(fields: [farmId], references: [id], onDelete: SetNull)
-  lot             Lot?                  @relation(fields: [lotId], references: [id], onDelete: SetNull)
-  labor           Labor?                @relation(fields: [laborId], references: [id], onDelete: SetNull)
-  harvest         Harvest?              @relation(fields: [harvestId], references: [id], onDelete: SetNull)
-  coffeeProcess   CoffeeProcess?        @relation(fields: [coffeeProcessId], references: [id], onDelete: SetNull)
-  productFinal    ProductFinal?         @relation(fields: [productFinalId], references: [id], onDelete: SetNull)
-  publications    PublicationEvidence[]
+  id               String                @id @default(uuid()) @db.Uuid
+  farmId           String?               @db.Uuid
+  lotId            String?               @db.Uuid
+  laborId          String?               @db.Uuid
+  harvestId        String?               @db.Uuid
+  coffeeProcessId  String?               @db.Uuid
+  productFinalId   String?               @db.Uuid
+  objectKey        String
+  url              String?
+  capturedAt       DateTime?
+  geolocation      Json?
+  visibility       Visibility            @default(PRIVADA)
+  status           EvidenceStatus        @default(PENDIENTE)
+  moderation       Json?
+  moderationScore  Decimal?              @db.Decimal(5, 4)
+  moderationEngine String?
+  rejectionReason  String?
+  reviewedById     String?               @db.Uuid
+  reviewedAt       DateTime?
+  createdAt        DateTime              @default(now())
+  reviewedBy       User?                 @relation("EvidenceReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  farm             Farm?                 @relation(fields: [farmId], references: [id], onDelete: SetNull)
+  lot              Lot?                  @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  labor            Labor?                @relation(fields: [laborId], references: [id], onDelete: SetNull)
+  harvest          Harvest?              @relation(fields: [harvestId], references: [id], onDelete: SetNull)
+  coffeeProcess    CoffeeProcess?        @relation(fields: [coffeeProcessId], references: [id], onDelete: SetNull)
+  productFinal     ProductFinal?         @relation(fields: [productFinalId], references: [id], onDelete: SetNull)
+  publications     PublicationEvidence[]
 
   @@index([harvestId])
   @@index([coffeeProcessId])
@@ -449,12 +499,16 @@ model Evidence {
 
 model Report {
   id          String    @id @default(uuid()) @db.Uuid
+  farmId      String    @db.Uuid
   type        String
   periodStart DateTime?
   periodEnd   DateTime?
   totalCosts  Decimal?  @db.Decimal(14, 2)
   information Json
   createdAt   DateTime  @default(now())
+  farm        Farm      @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@index([farmId, type])
 }
 
 model Publication {
