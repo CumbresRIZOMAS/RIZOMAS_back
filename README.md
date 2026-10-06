@@ -46,6 +46,12 @@ Las variables disponibles están documentadas en
 No subas `.env` al repositorio ni compartas sus secretos. El archivo está
 ignorado por Git; utiliza `.env.example` como plantilla.
 
+El backend prioriza `SUPABASE_JWT_SECRET` si está definido; de lo contrario
+valida los tokens con `SUPABASE_JWKS_URL`. Para este proyecto se recomienda
+dejar `SUPABASE_JWT_SECRET` sin definir y usar el endpoint JWKS. La pantalla
+**OAuth Server** de Supabase es opcional y no es necesaria para autenticar
+usuarios normales con Supabase Auth.
+
 ### Conexión con Supabase
 
 Para desarrollo local puede utilizarse la conexión directa de Supabase:
@@ -153,6 +159,20 @@ El archivo `supabase/auth-hook.sql` crea el Custom Access Token Hook que añade
 SQL Editor de Supabase, selecciona
 `public.rizomas_custom_access_token_hook` en **Authentication > Hooks >
 Custom Access Token**.
+
+Como alternativa, en **Authentication > Hooks > Custom Access Token**
+selecciona **HTTP Endpoint** y configura:
+
+```text
+https://rizomas-back.onrender.com/api/v1/auth/hooks/custom-access-token
+```
+
+Usa un secreto nuevo generado por Supabase y guárdalo como
+`SUPABASE_AUTH_HOOK_SECRET` en Render. El backend valida los headers estándar
+de Webhooks, conserva los claims originales y añade el rol local. No actives
+simultáneamente la función SQL y el endpoint HTTP: elige una sola
+implementación. Después de cambiar el hook, inicia sesión de nuevo para
+obtener un JWT con los claims actualizados.
 
 Las políticas RLS se aplican a los roles `authenticated` y `anon`. El rol
 propietario que usa Prisma no se fuerza con `FORCE ROW LEVEL SECURITY`, por lo

@@ -24,6 +24,7 @@ import { IndicatorsModule } from './modules/indicators/indicators.module';
 import { PublicationsModule } from './modules/publications/publications.module';
 import { HealthController } from './health.controller';
 import { StorageModule } from './common/storage/storage.module';
+import { AuthHooksModule } from './modules/auth/auth-hooks.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { StorageModule } from './common/storage/storage.module';
     JwtModule.register({ global: true }),
     PrismaModule,
     StorageModule,
+    AuthHooksModule,
     UsersModule,
     FarmsModule,
     LotsModule,
