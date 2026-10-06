@@ -72,6 +72,37 @@ Authorization: Bearer <supabase-access-token>
 Las rutas marcadas como públicas no requieren token. El usuario autenticado
 se relaciona con el usuario local mediante `authUserId` o correo electrónico.
 
+### Cloudflare R2
+
+Las evidencias usan un bucket R2 privado. El backend genera URLs prefirmadas
+para que el cliente cargue o descargue archivos sin exponer las credenciales.
+Configura en `.env`:
+
+```text
+R2_ACCOUNT_ID=<account-id>
+R2_ACCESS_KEY_ID=<s3-access-key-id>
+R2_SECRET_ACCESS_KEY=<s3-secret-access-key>
+R2_BUCKET=<bucket-name>
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+R2_SIGNED_URL_TTL_SECONDS=900
+```
+
+El token de API general de Cloudflare no se utiliza para estas operaciones S3.
+Después de crear una URL de carga, el cliente debe enviar el archivo
+directamente a R2 con `PUT` y el `Content-Type` solicitado; posteriormente
+puede guardar el `objectKey` al crear la evidencia.
+
+Endpoints protegidos:
+
+```http
+POST /api/v1/evidence/upload-url
+POST /api/v1/evidence/download-url
+```
+
+Las claves se generan bajo `farms/<farmId>/evidence/`. No hagas público el
+bucket ni subas Access Keys al repositorio. Si una credencial fue compartida
+por accidente, revócala y genera otra en Cloudflare antes de usar producción.
+
 ## Base de datos y Prisma
 
 Generar el cliente Prisma:
@@ -102,6 +133,31 @@ npm run prisma:studio
 > `prisma db push`, no ejecutes la migración inicial directamente sin revisar
 > el estado de la base y baselinarla. Compara primero el esquema remoto con
 > `prisma migrate diff` o genera una migración incremental.
+
+### Fase 1: PostGIS, RLS y Custom Claims
+
+La migración
+`prisma/migrations/20261006150000_enable_postgis_and_rls/migration.sql`
+habilita PostGIS y activa RLS en las tablas sensibles. Sus políticas relacionan
+el `sub` o `email` del JWT con `User.authUserId`/`User.email` y luego validan
+la pertenencia a la finca mediante `Farm.ownerId` y `FarmUser`.
+
+Aplica la migración únicamente después de revisar el estado de la base remota:
+
+```bash
+npm run prisma:migrate:deploy
+```
+
+El archivo `supabase/auth-hook.sql` crea el Custom Access Token Hook que añade
+`user_role` y `app_metadata.user_role` al token. Después de ejecutarlo en el
+SQL Editor de Supabase, selecciona
+`public.rizomas_custom_access_token_hook` en **Authentication > Hooks >
+Custom Access Token**.
+
+Las políticas RLS se aplican a los roles `authenticated` y `anon`. El rol
+propietario que usa Prisma no se fuerza con `FORCE ROW LEVEL SECURITY`, por lo
+que las validaciones de NestJS siguen siendo obligatorias para las consultas
+del backend. No se debe interpretar RLS como sustituto de los Guards.
 
 ## Ejecución
 

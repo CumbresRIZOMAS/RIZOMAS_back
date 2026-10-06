@@ -23,12 +23,14 @@ import { EnvironmentModule } from './modules/environment/environment.module';
 import { IndicatorsModule } from './modules/indicators/indicators.module';
 import { PublicationsModule } from './modules/publications/publications.module';
 import { HealthController } from './health.controller';
+import { StorageModule } from './common/storage/storage.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.register({ global: true }),
     PrismaModule,
+    StorageModule,
     UsersModule,
     FarmsModule,
     LotsModule,

@@ -4,11 +4,29 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { CreateEvidenceDto, ModerateEvidenceDto } from './dto/evidence.dto';
+import { CreateEvidenceDownloadUrlDto, CreateEvidenceUploadUrlDto } from './dto/evidence-storage.dto';
 import { EvidenceService } from './evidence.service';
+import { R2Service } from '../../common/storage/r2.service';
 
 @Controller('evidence')
 export class EvidenceController {
-  constructor(private readonly evidence: EvidenceService) {}
+  constructor(
+    private readonly evidence: EvidenceService,
+    private readonly storage: R2Service,
+  ) {}
+
+  @Post('upload-url')
+  @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
+  createUploadUrl(@Body() dto: CreateEvidenceUploadUrlDto) {
+    const objectKey = `farms/${dto.farmId}/evidence/${crypto.randomUUID()}-${dto.fileName}`;
+    return this.storage.createUploadUrl(objectKey, dto.contentType);
+  }
+
+  @Post('download-url')
+  @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
+  createDownloadUrl(@Body() dto: CreateEvidenceDownloadUrlDto) {
+    return this.storage.createDownloadUrl(dto.objectKey);
+  }
 
   @Post()
   @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
