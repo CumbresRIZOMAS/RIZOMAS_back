@@ -1,21 +1,29 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsDate, IsObject, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsDate,
+  IsIn,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 
 export class SoilParameterDto {
   @IsString()
+  @IsNotEmpty()
   name: string;
 
+  @IsNumber()
   value: number;
 
   @IsOptional()
   @IsString()
   unit?: string;
-
-  @IsOptional()
-  min?: number;
-
-  @IsOptional()
-  max?: number;
 }
 
 export class CreateSoilAnalysisDto {
@@ -34,7 +42,9 @@ export class CreateSoilAnalysisDto {
   @IsString()
   laboratory?: string;
 
+  /** Resultados del laboratorio. Los rangos salen del catálogo SoilReferenceRange. */
   @IsArray()
+  @ArrayNotEmpty()
   @ValidateNested({ each: true })
   @Type(() => SoilParameterDto)
   parameters: SoilParameterDto[];
@@ -44,18 +54,22 @@ export class CreateSoilAnalysisDto {
   observations?: string;
 }
 
+export const RECOMMENDATION_TYPES = ['PRACTICA', 'BIOINSUMO'] as const;
+
 export class CreateRecommendationDto {
-  @IsOptional()
+  /** Toda recomendación cuelga de un diagnóstico (RF-12); el análisis se deduce de él. */
   @IsUUID()
-  soilAnalysisId?: string;
+  diagnosisId: string;
 
-  @IsOptional()
-  @IsUUID()
-  diagnosisId?: string;
+  @IsIn(RECOMMENDATION_TYPES)
+  type: (typeof RECOMMENDATION_TYPES)[number];
 
   @IsString()
-  type: string;
-
-  @IsString()
+  @IsNotEmpty()
   description: string;
+
+  /** Obligatorio si type es BIOINSUMO. Debe ser de la misma finca del análisis. */
+  @ValidateIf((dto: CreateRecommendationDto) => dto.type === 'BIOINSUMO' || dto.bioinputId !== undefined)
+  @IsUUID()
+  bioinputId?: string;
 }

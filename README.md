@@ -233,9 +233,9 @@ un token de Supabase válido.
 | Cultivos | `/crops`, `/lots/:lotId/crops` | Cultivos y seguimiento |
 | Ciclos | `/cycles` | Ciclos productivos |
 | Labores | `/labors`, `/harvests`, `/agronomic-management` | Labores, cosechas y manejo agronómico |
-| Suelos | `/soil-analyses`, `/recommendations` | Análisis y recomendaciones |
+| Suelos | `/soil-analyses`, `/farms/:farmId/soil-analyses`, `/lots/:lotId/soil-analyses`, `/recommendations`, `/soil-reference-ranges` | Análisis con diagnóstico automático, recomendaciones y catálogo de rangos de referencia |
 | Ambiente | `/environment` | Condiciones ambientales |
-| Bioinsumos | `/bioinputs` | Bioinsumos y aplicaciones |
+| Bioinsumos | `/bioinputs`, `/farms/:farmId/bioinputs`, `/bioinputs/:id`, `/bioinputs/applications` | Elaboración, composición, aplicaciones y trazabilidad |
 | Café | `/coffee-processes` | Procesos de café |
 | Evidencias | `/evidence` | Evidencias y moderación |
 | Indicadores | `/indicators` | Definiciones y valores de indicadores |
@@ -265,6 +265,14 @@ GET /api/v1/publications/:id
   transacciones cuando corresponde.
 - Las evidencias incluyen estado de moderación, revisor, fecha, puntuación y
   razón de rechazo.
+- Al registrar un análisis de suelo se genera un diagnóstico por parámetro
+  (`BAJO`, `OPTIMO`, `ALTO` o `SIN_REFERENCIA`) comparando contra el catálogo
+  `SoilReferenceRange`, que administran los técnicos. Un rango específico del
+  cultivo del lote tiene prioridad sobre el general. El rango usado se copia al
+  diagnóstico, y cada valor fuera de rango genera una recomendación automática.
+  Todo se guarda en una sola transacción.
+- Análisis, recomendaciones, bioinsumos y aplicaciones validan que lote, labor
+  y bioinsumo pertenezcan a la misma finca, y quedan en el log de auditoría.
 
 ## Despliegue en Render
 
@@ -294,6 +302,23 @@ Después de cada despliegue verifica:
 
 ```text
 https://<servicio>.onrender.com/api/v1/health
+```
+
+## Pruebas
+
+```bash
+npm test
+```
+
+Las pruebas de integración (`*.integration.spec.ts`) corren solo si
+`TEST_DATABASE_URL` apunta a una base PostgreSQL de prueba con las migraciones
+aplicadas. **Borran los datos de esa base**: nunca uses la de Supabase.
+
+```bash
+docker run -d --name rizomas-pg -e POSTGRES_PASSWORD=postgres -p 55432:5432 postgres:16-alpine
+export TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:55432/postgres
+DATABASE_URL=$TEST_DATABASE_URL npx prisma migrate deploy
+npm test
 ```
 
 ## Scripts disponibles
