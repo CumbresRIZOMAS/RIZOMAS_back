@@ -228,6 +228,18 @@ Después de cada despliegue verifica:
 https://<servicio>.onrender.com/api/v1/health
 ```
 
+## Probar en local sin tocar Supabase
+
+```bash
+./scripts/dev-local.sh tu@correo.com
+```
+
+Crea (o reutiliza) un PostgreSQL desechable en Docker, aplica las migraciones,
+registra tu usuario con rol `TECNICO` (otro rol: `ROLE=ADMIN_CUMBRES ./scripts/dev-local.sh ...`)
+y arranca la API en `http://localhost:3000`. No modifica tu `.env`. El login
+sigue siendo el de Supabase, así que el correo debe existir en Supabase Auth.
+Para borrar la base de prueba: `docker rm -f rizomas-pg`.
+
 ## Pruebas
 
 ```bash
