@@ -155,13 +155,18 @@ npm run prisma:migrate:deploy
 ```
 
 El archivo `supabase/auth-hook.sql` crea el Custom Access Token Hook que añade
-`user_role` y `app_metadata.user_role` al token. Después de ejecutarlo en el
-SQL Editor de Supabase, selecciona
-`public.rizomas_custom_access_token_hook` en **Authentication > Hooks >
-Custom Access Token**.
+`user_role` y `app_metadata.user_role` al token a partir de
+`public."User"`. Esta es la configuración recomendada para producción:
 
-Como alternativa, en **Authentication > Hooks > Custom Access Token**
-selecciona **HTTP Endpoint** y configura:
+1. Ejecuta el archivo en el SQL Editor de Supabase.
+2. En **Authentication > Hooks > Custom Access Token**, selecciona
+   `public.rizomas_custom_access_token_hook`.
+3. Desactiva cualquier hook HTTP configurado para Custom Access Token.
+
+El backend también conserva un endpoint HTTP como alternativa para instalaciones
+que no puedan usar un hook SQL. Si se elige esa alternativa, en
+**Authentication > Hooks > Custom Access Token** selecciona **HTTP Endpoint** y
+configura:
 
 ```text
 https://rizomas-back.onrender.com/api/v1/auth/hooks/custom-access-token
