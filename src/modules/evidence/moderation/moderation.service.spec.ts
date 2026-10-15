@@ -1,7 +1,8 @@
 import { EvidenceStatus } from '@prisma/client';
 import * as jpeg from 'jpeg-js';
 import { PNG } from 'pngjs';
-import { decodeRgb, UnsupportedImageError } from './image-decode';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { decodeRgb, resizeRgb } = require('./nsfwjs.child.js');
 import { ImageModerationAdapter } from './moderation.port';
 import { decideStatus, ModerationService } from './moderation.service';
 import { NsfwjsAdapter } from './nsfwjs.adapter';
@@ -103,18 +104,46 @@ describe('decodificación de imágenes', () => {
   });
 
   it('rechaza formatos que no son imagen', () => {
-    expect(() => decodeRgb(Buffer.from('%PDF-1.7'))).toThrow(UnsupportedImageError);
+    expect(() => decodeRgb(Buffer.from('%PDF-1.7'))).toThrow('Formato de imagen no soportado');
   });
 });
 
 describe('NsfwjsAdapter (modelo real)', () => {
-  it('clasifica una imagen y devuelve un puntaje entre 0 y 1', async () => {
-    const w = 64;
+  it('clasifica en un proceso aparte y lo cierra al quedar inactivo', async () => {
+    const w = 640;
     const data = Buffer.alloc(w * w * 4);
     for (let i = 0; i < w * w; i++) data.set([40, 140, 60, 255], i * 4);
-    const result = await new NsfwjsAdapter().classify(jpeg.encode({ data, width: w, height: w }, 90).data);
-    expect(result.score).toBeGreaterThanOrEqual(0);
-    expect(result.score).toBeLessThanOrEqual(1);
-    expect(Object.keys(result.labels)).toEqual(expect.arrayContaining(['Porn', 'Neutral', 'Drawing', 'Hentai', 'Sexy']));
+    const adapter = new NsfwjsAdapter({ get: () => '300' } as never);
+    try {
+      const result = await adapter.classify(jpeg.encode({ data, width: w, height: w }, 90).data);
+      expect(result.score).toBeGreaterThanOrEqual(0);
+      expect(result.score).toBeLessThanOrEqual(1);
+      expect(Object.keys(result.labels)).toEqual(expect.arrayContaining(['Porn', 'Neutral', 'Drawing', 'Hentai', 'Sexy']));
+      expect(adapter.running).toBe(true);
+
+      await new Promise((r) => setTimeout(r, 1000));
+      expect(adapter.running).toBe(false);
+    } finally {
+      adapter.stop();
+    }
   }, 60_000);
+
+  it('rechaza un archivo que no es imagen sin tumbar el proceso', async () => {
+    const adapter = new NsfwjsAdapter({ get: () => '300' } as never);
+    try {
+      await expect(adapter.classify(Buffer.from('%PDF-1.7 no es una foto'))).rejects.toThrow('Formato de imagen no soportado');
+    } finally {
+      adapter.stop();
+    }
+  }, 60_000);
+});
+
+describe('reducción de imagen', () => {
+  it('reduce a 224×224 promediando', () => {
+    const grande = { data: new Uint8Array(448 * 448 * 3).fill(100), width: 448, height: 448 };
+    const chica = resizeRgb(grande);
+    expect(chica).toMatchObject({ width: 224, height: 224 });
+    expect(chica.data).toHaveLength(224 * 224 * 3);
+    expect(chica.data[0]).toBe(100);
+  });
 });
