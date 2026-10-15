@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreatePublicationDto {
   @IsUUID()
@@ -24,6 +24,14 @@ export class CreatePublicationDto {
   @IsOptional()
   @IsString()
   unit?: string;
+}
+
+/** Fotos que acompañan la publicación; reemplaza la selección anterior. */
+export class SetPublicationEvidencesDto {
+  @IsArray()
+  @ArrayMaxSize(12)
+  @IsUUID('all', { each: true })
+  evidenceIds: string[];
 }
 
 export class PublishPublicationDto {

@@ -36,6 +36,16 @@ export class R2Service {
     };
   }
 
+  /** Lee un objeto (para la moderación automática). Rechaza archivos de más de 15 MB. */
+  async getObject(objectKey: string, maxBytes = 15 * 1024 * 1024) {
+    const response = await this.clientForR2().send(new GetObjectCommand({ Bucket: this.bucket(), Key: objectKey }));
+    if (response.ContentLength !== undefined && response.ContentLength > maxBytes) {
+      throw new Error(`El objeto ${objectKey} supera el tamaño máximo para moderación`);
+    }
+    if (!response.Body) throw new Error(`El objeto ${objectKey} está vacío`);
+    return { body: Buffer.from(await response.Body.transformToByteArray()), contentType: response.ContentType };
+  }
+
   private clientForR2() {
     if (this.client) return this.client;
 

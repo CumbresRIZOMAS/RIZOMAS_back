@@ -69,4 +69,9 @@ export class ModerateEvidenceDto {
   @IsOptional()
   @IsString()
   rejectionReason?: string;
+
+  /** Al aprobar, el revisor puede autorizar que la foto sea pública (RF-17). */
+  @IsOptional()
+  @IsEnum(Visibility)
+  visibility?: Visibility;
 }
