@@ -116,6 +116,6 @@ describe('sincronización offline-first', () => {
     const admin = setup(AppRole.ADMIN_FINCA);
     await admin.service.pull(undefined, admin.user);
     const includeAdmin = (admin.prisma.farm.findMany.mock.calls[0] as unknown as [{ include: Record<string, unknown> }])[0].include;
-    expect(includeAdmin).toMatchObject({ purchases: true, sales: true });
+    expect(includeAdmin).toMatchObject({ purchases: { include: { supplier: { select: { name: true } } } }, sales: true });
   });
 });

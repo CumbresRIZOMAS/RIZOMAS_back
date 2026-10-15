@@ -114,7 +114,7 @@ export class SyncService {
           },
           coffeeProcesses: { include: { products: { include: { certifications: true } } } },
           // Compras y ventas solo para quien puede verlas (ASR-14).
-          ...(verComercial ? { purchases: true, sales: true } : {}),
+          ...(verComercial ? { purchases: { include: { supplier: { select: { name: true } } } }, sales: true } : {}),
         },
         orderBy: { createdAt: 'asc' },
       }),
