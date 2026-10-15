@@ -13,7 +13,7 @@ describe('contenido público sin datos privados', () => {
 
   it('GET /evidence/public usa la selección pública', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
-    const service = new EvidenceService({ evidence: { findMany } } as never, {} as never, {} as never);
+    const service = new EvidenceService({ evidence: { findMany } } as never, {} as never, {} as never, {} as never);
     await service.findPublic();
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ select: PUBLIC_EVIDENCE_SELECT }));
   });
