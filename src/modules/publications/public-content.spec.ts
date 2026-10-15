@@ -21,7 +21,7 @@ describe('contenido público sin datos privados', () => {
   it('las publicaciones solo anidan la selección pública de sus evidencias', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const findFirst = jest.fn().mockResolvedValue({ id: 'p1' });
-    const service = new PublicationsService({ publication: { findMany, findFirst } } as never, {} as never);
+    const service = new PublicationsService({ publication: { findMany, findFirst } } as never, {} as never, {} as never, {} as never);
 
     await service.findPublished();
     await service.findOne('p1');
