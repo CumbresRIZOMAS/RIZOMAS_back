@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateEvidenceDto, ModerateEvidenceDto } from './dto/evidence.dto';
 import { AuditService } from '../../common/services/audit.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
+import { PUBLIC_EVIDENCE_SELECT } from './public-evidence';
 
 @Injectable()
 export class EvidenceService {
@@ -39,6 +40,7 @@ export class EvidenceService {
     return this.prisma.evidence.findMany({
       where: { status: 'APROBADA', visibility: 'PUBLICA' },
       orderBy: { createdAt: 'desc' },
+      select: PUBLIC_EVIDENCE_SELECT,
     });
   }
 

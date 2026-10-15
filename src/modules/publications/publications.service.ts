@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePublicationDto, PublishPublicationDto } from './dto/publication.dto';
+import { PUBLIC_EVIDENCE_SELECT } from '../evidence/public-evidence';
 
 @Injectable()
 export class PublicationsService {
@@ -30,7 +31,7 @@ export class PublicationsService {
         unit: true,
         publicLocation: true,
         publishedAt: true,
-        evidences: { where: { evidence: { status: 'APROBADA', visibility: 'PUBLICA' } }, include: { evidence: true } },
+        evidences: { where: { evidence: { status: 'APROBADA', visibility: 'PUBLICA' } }, select: { evidence: { select: PUBLIC_EVIDENCE_SELECT } } },
       },
     });
   }
@@ -46,7 +47,7 @@ export class PublicationsService {
         unit: true,
         publicLocation: true,
         publishedAt: true,
-        evidences: { where: { evidence: { status: 'APROBADA', visibility: 'PUBLICA' } }, include: { evidence: true } },
+        evidences: { where: { evidence: { status: 'APROBADA', visibility: 'PUBLICA' } }, select: { evidence: { select: PUBLIC_EVIDENCE_SELECT } } },
       },
     });
     if (!publication) throw new NotFoundException('Publicación no encontrada');
