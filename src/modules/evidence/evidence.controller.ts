@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { EvidenceStatus } from '@prisma/client';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
@@ -32,6 +33,30 @@ export class EvidenceController {
   @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
   create(@Body() dto: CreateEvidenceDto, @CurrentUser() user: RequestUser) {
     return this.evidence.create(dto, user);
+  }
+
+  /** Bandeja de revisión. ?status=EN_REVISION,CUARENTENA filtra; sin filtro trae todo lo que espera decisión. */
+  @Get('moderation')
+  @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO)
+  queue(@Query('status') status?: string) {
+    if (!status) return this.evidence.queue();
+    const statuses = status.split(',').map((s) => s.trim());
+    const invalid = statuses.filter((s) => !(s in EvidenceStatus));
+    if (invalid.length) throw new BadRequestException(`Estado no válido: ${invalid.join(', ')}`);
+    return this.evidence.queue(statuses as EvidenceStatus[]);
+  }
+
+  @Get('moderation/summary')
+  @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO)
+  summary() {
+    return this.evidence.summary();
+  }
+
+  /** Reintenta la moderación automática de las evidencias que quedaron PENDIENTE. */
+  @Post('moderation/process')
+  @Roles(AppRole.ADMIN_CUMBRES, AppRole.TECNICO)
+  processPending() {
+    return this.evidence.processPending();
   }
 
   @Get('moderation/pending')
