@@ -6,5 +6,6 @@ import { SoilService } from './soil.service';
 @Module({
   controllers: [SoilController],
   providers: [SoilService, ReferenceRangesService],
+  exports: [SoilService],
 })
 export class SoilModule {}
