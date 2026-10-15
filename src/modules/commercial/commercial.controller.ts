@@ -19,6 +19,11 @@ export class CommercialController {
     return this.commercial.createSale(dto);
   }
 
+  @Get('suppliers')
+  suppliers() {
+    return this.commercial.suppliers();
+  }
+
   @Get('farms/:farmId/ledger')
   ledger(@Param('farmId') farmId: string) {
     return this.commercial.ledger(farmId);

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDate, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsBoolean, IsDate, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class CreatePurchaseDto {
   @IsUUID()
@@ -8,6 +8,16 @@ export class CreatePurchaseDto {
   @IsOptional()
   @IsUUID()
   supplierId?: string;
+
+  /**
+   * Alternativa a supplierId para la app (offline): el nombre del proveedor.
+   * Si no existe en el catálogo se crea.
+   */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  supplierName?: string;
 
   @Type(() => Date)
   @IsDate()
