@@ -91,25 +91,35 @@ export class SyncService {
     return { results };
   }
 
-  async pull(since: string | undefined, requestUser: RequestUser) {
+  /**
+   * Foto completa de las fincas del usuario para la app (offline-first). Se
+   * manda completa en cada pull: los cambios en lotes, labores o análisis no
+   * tocan farm.updatedAt, así que filtrar por fecha de la finca perdía datos.
+   * El volumen por agricultor es pequeño (1-2 fincas).
+   */
+  async pull(_since: string | undefined, requestUser: RequestUser) {
     const userId = await this.resolveUserId(requestUser);
-    const updatedAt = since ? new Date(since) : undefined;
-    if (updatedAt && Number.isNaN(updatedAt.valueOf())) {
-      return { serverTime: new Date().toISOString(), farms: [] };
-    }
-
-    const farms = await this.prisma.farm.findMany({
-      where: {
-        OR: [{ ownerId: userId }, { members: { some: { userId } } }],
-        ...(updatedAt ? { updatedAt: { gt: updatedAt } } : {}),
-      },
-      include: {
-        lots: { include: { crops: true, labors: true } },
-        labors: true,
-      },
-      orderBy: { updatedAt: 'asc' },
-    });
-    return { serverTime: new Date().toISOString(), farms };
+    const verComercial = [AppRole.ADMIN_FINCA, AppRole.ADMIN_CUMBRES].includes(requestUser.role as AppRole);
+    const [user, farms] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true, role: true } }),
+      this.prisma.farm.findMany({
+        where: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
+        omit: { exactLocation: true },
+        include: {
+          lots: { include: { crops: true } },
+          labors: { include: { harvest: true, management: true } },
+          soilAnalyses: {
+            orderBy: { date: 'desc' },
+            include: { diagnostics: { include: { recommendations: { include: { bioinput: { select: { name: true } } } } } } },
+          },
+          coffeeProcesses: { include: { products: { include: { certifications: true } } } },
+          // Compras y ventas solo para quien puede verlas (ASR-14).
+          ...(verComercial ? { purchases: true, sales: true } : {}),
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+    return { serverTime: new Date().toISOString(), user, farms };
   }
 
   /**

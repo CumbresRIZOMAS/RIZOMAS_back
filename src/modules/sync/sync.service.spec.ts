@@ -8,6 +8,8 @@ const LABOR = '8b2e0c9a-3d4e-4f60-8b1c-2d3e4f506172';
 
 function setup(role = AppRole.AGRICULTOR) {
   const prisma = {
+    user: { findUnique: jest.fn(async () => ({ id: 'user-1', name: 'Carlos', email: 'c@x.co', role })) },
+    farm: { findMany: jest.fn(async () => []) },
     syncOperation: {
       findUnique: jest.fn(async ({ where }: { where: { clientUuid: string } }) => (where.clientUuid === 'ya' ? { appliedAt: new Date('2026-01-01') } : null)),
       create: jest.fn(),
@@ -101,5 +103,19 @@ describe('sincronización offline-first', () => {
     const { results } = await service.applyBatch({ userId: 'user-1', operations: [{ clientUuid: 'h', entity: 'harvest', operation: 'create', payload: harvest }] }, user);
     expect(results[0].status).toBe('applied');
     expect(labors.createHarvest).toHaveBeenCalledWith(expect.objectContaining({ quantity: 680, unit: 'kg' }), user);
+  });
+
+  it('el pull trae el perfil y solo incluye compras y ventas para roles autorizados', async () => {
+    const agricultor = setup(AppRole.AGRICULTOR);
+    const respuesta = await agricultor.service.pull(undefined, agricultor.user);
+    expect(respuesta.user).toMatchObject({ name: 'Carlos' });
+    const include = (agricultor.prisma.farm.findMany.mock.calls[0] as unknown as [{ include: Record<string, unknown> }])[0].include;
+    expect(include).not.toHaveProperty('purchases');
+    expect(include).toHaveProperty('soilAnalyses');
+
+    const admin = setup(AppRole.ADMIN_FINCA);
+    await admin.service.pull(undefined, admin.user);
+    const includeAdmin = (admin.prisma.farm.findMany.mock.calls[0] as unknown as [{ include: Record<string, unknown> }])[0].include;
+    expect(includeAdmin).toMatchObject({ purchases: true, sales: true });
   });
 });
