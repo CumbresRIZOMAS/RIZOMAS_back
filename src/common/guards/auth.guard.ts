@@ -28,10 +28,33 @@ export class AuthGuard implements CanActivate {
 
     try {
       const payload = await this.verifyToken(token);
-      const localUser = await this.prisma.user.findFirst({
+      let localUser = await this.prisma.user.findFirst({
         where: { OR: [{ authUserId: payload.sub }, ...(payload.email ? [{ email: payload.email }] : [])] },
-        select: { id: true, role: true, active: true },
+        select: { id: true, role: true, active: true, authUserId: true, email: true },
       });
+      const email = typeof payload.email === 'string' ? payload.email : undefined;
+      if (!localUser && payload.sub && email) {
+        const metadata = payload.user_metadata as Record<string, unknown> | undefined;
+        const name =
+          (metadata?.full_name as string | undefined)?.trim() ||
+          (metadata?.name as string | undefined)?.trim() ||
+          email.split('@')[0];
+        localUser = await this.prisma.user.create({
+          data: {
+            authUserId: payload.sub,
+            email,
+            name,
+            role: 'AGRICULTOR',
+          },
+          select: { id: true, role: true, active: true, authUserId: true, email: true },
+        });
+      } else if (localUser && !localUser.authUserId && payload.sub) {
+        localUser = await this.prisma.user.update({
+          where: { id: localUser.id },
+          data: { authUserId: payload.sub },
+          select: { id: true, role: true, active: true, authUserId: true, email: true },
+        });
+      }
       if (localUser && !localUser.active) throw new UnauthorizedException('Usuario inactivo');
       request.user = {
         sub: payload.sub,
@@ -46,7 +69,16 @@ export class AuthGuard implements CanActivate {
     }
   }
 
-  private async verifyToken(token: string): Promise<JWTPayload & { user_role?: string; app_metadata?: { user_role?: string }; role?: string }> {
+  private async verifyToken(
+    token: string,
+  ): Promise<
+    JWTPayload & {
+      user_role?: string;
+      app_metadata?: { user_role?: string };
+      user_metadata?: Record<string, unknown>;
+      role?: string;
+    }
+  > {
     const secret = this.config.get<string>('SUPABASE_JWT_SECRET');
     if (secret) {
       return this.jwtService.verifyAsync(token, { secret });
@@ -57,7 +89,12 @@ export class AuthGuard implements CanActivate {
     const { payload } = await jwtVerify(token, createRemoteJWKSet(new URL(jwksUrl)), {
       issuer: this.config.get<string>('SUPABASE_URL') ? `${this.config.get<string>('SUPABASE_URL')}/auth/v1` : undefined,
     });
-    return payload as JWTPayload & { user_role?: string; app_metadata?: { user_role?: string }; role?: string };
+    return payload as JWTPayload & {
+      user_role?: string;
+      app_metadata?: { user_role?: string };
+      user_metadata?: Record<string, unknown>;
+      role?: string;
+    };
   }
 
   private extractToken(authorization?: string): string | undefined {
