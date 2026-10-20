@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestj
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
-import { CreateCertificationDto, CreateCoffeeProcessDto, CreateProductFinalDto, UpdateCoffeeProcessDto } from './dto/coffee.dto';
+import { CreateCertificationDto, CreateCoffeeProcessDto, CreateCoffeeProcessEventDto, CreateProductFinalDto, UpdateCoffeeProcessDto } from './dto/coffee.dto';
 import { CoffeeService } from './coffee.service';
 
 @Controller('coffee-processes')
@@ -16,18 +16,23 @@ export class CoffeeController {
   }
 
   @Get('farms/:farmId')
-  findByFarm(@Param('farmId', ParseUUIDPipe) farmId: string) {
-    return this.coffee.findByFarm(farmId);
+  findByFarm(@Param('farmId', ParseUUIDPipe) farmId: string, @CurrentUser() user: RequestUser) {
+    return this.coffee.findByFarm(farmId, user);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.coffee.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: RequestUser) {
+    return this.coffee.findOne(id, user);
   }
 
   @Patch(':id')
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCoffeeProcessDto, @CurrentUser() user: RequestUser) {
     return this.coffee.update(id, dto, user);
+  }
+
+  @Post(':id/events')
+  addEvent(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CreateCoffeeProcessEventDto, @CurrentUser() user: RequestUser) {
+    return this.coffee.addEvent(id, dto, user);
   }
 
   @Post(':id/products')

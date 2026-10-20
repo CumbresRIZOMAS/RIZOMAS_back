@@ -4,15 +4,18 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { CreateAgronomicManagementDto, CreateHarvestDto, CreateLaborDto } from './dto/labor.dto';
+import { FarmAccessService } from '../../common/services/farm-access.service';
 
 @Injectable()
 export class LaborsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly access: FarmAccessService,
   ) {}
 
   async create(dto: CreateLaborDto, user: RequestUser) {
+    await this.access.assertAccess(user, dto.farmId);
     await this.validateScope(dto.farmId, dto.lotId, dto.cropId, dto.workerId);
     const labor = await this.prisma.labor.create({ data: dto as never });
     await this.audit.record({ userId: user.appUserId ?? user.sub, entity: 'Labor', entityId: labor.id, action: 'CREATE', after: labor });
@@ -23,6 +26,7 @@ export class LaborsService {
     const { harvestCropId, quantity, unit, quality, destination, ...labor } = dto;
     const cropId = harvestCropId ?? dto.cropId;
     if (!cropId) throw new BadRequestException('La cosecha requiere un cultivo');
+    await this.access.assertAccess(user, dto.farmId);
     await this.validateScope(dto.farmId, dto.lotId, cropId, dto.workerId);
     const result = await this.prisma.$transaction(async (tx) => {
       const created = await tx.labor.create({
@@ -43,6 +47,7 @@ export class LaborsService {
 
   async createAgronomicManagement(dto: CreateAgronomicManagementDto, user: RequestUser) {
     const { managementType, quantity, ...labor } = dto;
+    await this.access.assertAccess(user, dto.farmId);
     await this.validateScope(dto.farmId, dto.lotId, dto.cropId, dto.workerId);
     const result = await this.prisma.labor.create({
       data: {
@@ -56,7 +61,8 @@ export class LaborsService {
     return result;
   }
 
-  findByFarm(farmId: string) {
+  async findByFarm(farmId: string, user: RequestUser) {
+    await this.access.assertAccess(user, farmId);
     return this.prisma.labor.findMany({
       where: { farmId },
       orderBy: { startDate: 'desc' },
@@ -64,12 +70,13 @@ export class LaborsService {
     });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: RequestUser) {
     const labor = await this.prisma.labor.findUnique({
       where: { id },
       include: { farm: true, lot: true, crop: true, worker: true, harvest: true, management: true, evidences: true },
     });
     if (!labor) throw new NotFoundException('Labor no encontrada');
+    await this.access.assertAccess(user, labor.farmId);
     return labor;
   }
 

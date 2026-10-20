@@ -27,7 +27,7 @@ export class TraceabilityService {
       include: {
         crop: { include: { lot: { omit: { location: true }, include: { farm: noExactLocation, ...lotChain } } } },
         labor: { include: { lot: { omit: { location: true } }, farm: noExactLocation, evidences: evidenceSummary } },
-        coffeeProcesses: { include: { products: { include: { certifications: true } } } },
+        coffeeProcesses: { include: { events: { orderBy: { recordedAt: 'asc' } }, lot: { omit: { location: true } }, products: { include: { certifications: true } } } },
       },
     });
     if (!harvest) throw new NotFoundException('Cosecha no encontrada');
@@ -41,7 +41,7 @@ export class TraceabilityService {
       include: {
         lots: { omit: { location: true }, include: { crops: { include: { harvests: true } }, ...lotChain } },
         labors: { include: { harvest: true, management: true, evidences: evidenceSummary }, orderBy: { startDate: 'desc' } },
-        coffeeProcesses: { include: { harvest: true, products: { include: { certifications: true } } }, orderBy: { startedAt: 'desc' } },
+        coffeeProcesses: { include: { harvest: true, lot: { omit: { location: true } }, events: { orderBy: { recordedAt: 'asc' } }, products: { include: { certifications: true } } }, orderBy: { startedAt: 'desc' } },
       },
     });
     if (!farm) throw new NotFoundException('Finca no encontrada');

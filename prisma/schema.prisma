@@ -176,6 +176,7 @@ model Lot {
   environmentalConditions EnvironmentalCondition[]
   bioinputApplications    BioinputApplication[]
   indicators              IndicatorValue[]
+  coffeeProcesses         CoffeeProcess[]
 
   @@index([farmId])
 }
@@ -428,6 +429,7 @@ model CoffeeProcess {
   id           String         @id @default(uuid()) @db.Uuid
   farmId       String         @db.Uuid
   harvestId    String?        @db.Uuid
+  lotId        String?        @db.Uuid
   currentStage String
   startedAt    DateTime
   finishedAt   DateTime?
@@ -435,8 +437,34 @@ model CoffeeProcess {
   createdAt    DateTime       @default(now())
   farm         Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
   harvest      Harvest?       @relation(fields: [harvestId], references: [id], onDelete: SetNull)
+  lot          Lot?           @relation(fields: [lotId], references: [id], onDelete: SetNull)
   products     ProductFinal[]
+  events       CoffeeProcessEvent[]
   evidences    Evidence[]
+}
+
+/// Datos medibles de cada etapa de poscosecha. Un proceso contiene eventos en orden.
+model CoffeeProcessEvent {
+  id                 String        @id @default(uuid()) @db.Uuid
+  coffeeProcessId    String        @db.Uuid
+  stage              String
+  recordedAt         DateTime
+  inputKg            Decimal?      @db.Decimal(12, 2)
+  outputKg           Decimal?      @db.Decimal(12, 2)
+  waterLiters        Decimal?      @db.Decimal(12, 2)
+  wastewaterLiters   Decimal?      @db.Decimal(12, 2)
+  compostReuse       Boolean       @default(false)
+  durationHours      Decimal?      @db.Decimal(8, 2)
+  method             String?
+  brix               Decimal?      @db.Decimal(6, 2)
+  ph                 Decimal?      @db.Decimal(5, 2)
+  moisturePercent    Decimal?      @db.Decimal(5, 2)
+  scaScore           Decimal?      @db.Decimal(5, 2)
+  notes              String?
+  createdAt          DateTime      @default(now())
+  coffeeProcess      CoffeeProcess @relation(fields: [coffeeProcessId], references: [id], onDelete: Cascade)
+
+  @@index([coffeeProcessId, recordedAt])
 }
 
 model ProductFinal {
@@ -516,6 +544,7 @@ model Publication {
   farmId         String                @db.Uuid
   harvestId      String?               @db.Uuid
   title          String
+  description    String?
   region         String?
   quantity       Decimal?              @db.Decimal(12, 2)
   unit           String?

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDate, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsBoolean, IsDate, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 
 export class CreatePurchaseDto {
   @IsUUID()
@@ -31,6 +31,7 @@ export class CreatePurchaseDto {
   isBioinput?: boolean;
 
   @IsNumber()
+  @Min(0.01)
   quantity: number;
 
   @IsOptional()
@@ -46,6 +47,11 @@ export class CreateSaleDto {
   @IsUUID()
   farmId: string;
 
+  /** Cosecha de origen, cuando la venta se descuenta de una cosecha registrada. */
+  @IsOptional()
+  @IsUUID()
+  laborId?: string;
+
   @Type(() => Date)
   @IsDate()
   date: Date;
@@ -58,6 +64,7 @@ export class CreateSaleDto {
   buyer?: string;
 
   @IsNumber()
+  @Min(0.01)
   quantity: number;
 
   @IsOptional()

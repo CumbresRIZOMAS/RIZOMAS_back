@@ -4,7 +4,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { PublicationsService } from './publications.service';
-import { CreatePublicationDto, PublishPublicationDto, SetPublicationEvidencesDto } from './dto/publication.dto';
+import { CreatePublicationDto, PublishPublicationDto, SetPublicationEvidencesDto, UpdatePublicationDto } from './dto/publication.dto';
 
 /** Quienes deciden qué se publica en el portal (RF-18). */
 const EDITORES = [AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO];
@@ -17,6 +17,12 @@ export class PublicationsController {
   @Roles(...EDITORES)
   create(@Body() dto: CreatePublicationDto, @CurrentUser() user: RequestUser) {
     return this.publications.create(dto, user);
+  }
+
+  @Patch(':id')
+  @Roles(...EDITORES)
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePublicationDto, @CurrentUser() user: RequestUser) {
+    return this.publications.update(id, dto, user);
   }
 
   @Patch(':id/status')

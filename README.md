@@ -39,12 +39,18 @@ Las variables disponibles están documentadas en
 | `PORT` | Puerto HTTP. Render proporciona este valor automáticamente. |
 | `DATABASE_URL` | Cadena de conexión PostgreSQL usada por Prisma. |
 | `SUPABASE_URL` | URL del proyecto Supabase. |
+| `SUPABASE_ANON_KEY` | Clave pública del proyecto; el backend la usa para solicitar correos de recuperación después de validar permisos. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Clave secreta solo del backend; requerida para invitar, actualizar y eliminar usuarios de Supabase Auth. Nunca la pongas en la web o en el móvil. |
+| `WEB_APP_URL` | URL del panel web para los enlaces de invitación y restablecimiento. Debe estar permitida en Redirect URLs de Supabase Auth. |
 | `SUPABASE_JWT_SECRET` | Secreto JWT de Supabase, si se valida el token localmente. |
 | `SUPABASE_JWKS_URL` | URL JWKS alternativa para validar tokens de Supabase. |
 | `CORS_ORIGIN` | Orígenes permitidos separados por comas. |
 
 No subas `.env` al repositorio ni compartas sus secretos. El archivo está
 ignorado por Git; utiliza `.env.example` como plantilla.
+
+Después de actualizar el modelo de publicaciones, aplica las migraciones con
+`npm run prisma:migrate:deploy` en el entorno conectado a la base de datos.
 
 El backend prioriza `SUPABASE_JWT_SECRET` si está definido; de lo contrario
 valida los tokens con `SUPABASE_JWKS_URL`. Para este proyecto se recomienda

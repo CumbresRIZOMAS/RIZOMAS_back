@@ -28,12 +28,12 @@ export class LaborsController {
   }
 
   @Get('farms/:farmId/labors')
-  findByFarm(@Param('farmId') farmId: string) {
-    return this.labors.findByFarm(farmId);
+  findByFarm(@Param('farmId') farmId: string, @CurrentUser() user: RequestUser) {
+    return this.labors.findByFarm(farmId, user);
   }
 
   @Get('labors/:id')
-  findOne(@Param('id') id: string) {
-    return this.labors.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.labors.findOne(id, user);
   }
 }

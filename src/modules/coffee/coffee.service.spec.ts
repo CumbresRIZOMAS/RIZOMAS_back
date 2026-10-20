@@ -14,7 +14,8 @@ function setup(harvestFarm = 'finca-1') {
   };
   const audit = { record: jest.fn() };
   const user = { sub: 'a', appUserId: 'u1' } as never;
-  return { service: new CoffeeService(prisma as never, audit as never), prisma, audit, user };
+  const access = { assertAccess: jest.fn(async () => undefined) };
+  return { service: new CoffeeService(prisma as never, audit as never, access as never), prisma, audit, user };
 }
 
 describe('procesos de café', () => {

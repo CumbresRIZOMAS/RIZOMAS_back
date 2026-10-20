@@ -5,7 +5,7 @@ import { FarmAccessService } from '../../common/services/farm-access.service';
 import { R2Service } from '../../common/storage/r2.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreatePublicationDto, PublishPublicationDto, SetPublicationEvidencesDto } from './dto/publication.dto';
+import { CreatePublicationDto, PublishPublicationDto, SetPublicationEvidencesDto, UpdatePublicationDto } from './dto/publication.dto';
 import { PUBLIC_EVIDENCE_SELECT } from '../evidence/public-evidence';
 import { publicationForTraceability, toPublicTraceability } from './public-traceability';
 
@@ -32,6 +32,20 @@ export class PublicationsService {
     const publication = await this.prisma.publication.create({ data: dto });
     await this.audit.record({ userId: user.appUserId ?? user.sub, entity: 'Publication', entityId: publication.id, action: 'CREATE', after: publication });
     return publication;
+  }
+
+  async update(id: string, dto: UpdatePublicationDto, user: RequestUser) {
+    const before = await this.prisma.publication.findUnique({ where: { id } });
+    if (!before) throw new NotFoundException('Publicación no encontrada');
+    await this.access.assertAccess(user, before.farmId);
+    if (dto.harvestId) {
+      const harvest = await this.prisma.harvest.findUnique({ where: { id: dto.harvestId }, select: { labor: { select: { farmId: true } } } });
+      if (!harvest) throw new NotFoundException('Cosecha no encontrada');
+      if (harvest.labor.farmId !== before.farmId) throw new BadRequestException('La cosecha no pertenece a la finca');
+    }
+    const after = await this.prisma.publication.update({ where: { id }, data: dto as never });
+    await this.audit.record({ userId: user.appUserId ?? user.sub, entity: 'Publication', entityId: id, action: 'UPDATE_PROFILE', before, after });
+    return after;
   }
 
   async publish(id: string, dto: PublishPublicationDto, user: RequestUser) {
@@ -109,6 +123,7 @@ export class PublicationsService {
       select: {
         id: true,
         title: true,
+        description: true,
         region: true,
         quantity: true,
         unit: true,
@@ -125,6 +140,7 @@ export class PublicationsService {
       select: {
         id: true,
         title: true,
+        description: true,
         region: true,
         quantity: true,
         unit: true,

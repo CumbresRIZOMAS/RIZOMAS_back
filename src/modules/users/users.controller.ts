@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
-import { AddFarmMemberDto, CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
+import { CreateUserDto, UpdateUserDto, UpdateUserStatusDto } from './dto/create-user.dto';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -10,32 +11,37 @@ export class UsersController {
   constructor(private readonly users: UsersService) {}
 
   @Post()
-  create(@Body() dto: CreateUserDto) {
-    return this.users.create(dto);
+  create(@Body() dto: CreateUserDto, @CurrentUser() user: RequestUser) {
+    return this.users.create(dto, user);
   }
 
   @Get()
-  findAll() {
-    return this.users.findAll();
+  findAll(@CurrentUser() user: RequestUser) {
+    return this.users.findAll(user);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.users.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.users.findOne(id, user);
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.users.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateUserDto, @CurrentUser() user: RequestUser) {
+    return this.users.update(id, dto, user);
   }
 
   @Patch(':id/status')
-  setStatus(@Param('id') id: string, @Body('active') active: boolean) {
-    return this.users.setStatus(id, active);
+  setStatus(@Param('id') id: string, @Body() dto: UpdateUserStatusDto, @CurrentUser() user: RequestUser) {
+    return this.users.setStatus(id, dto.active, user);
   }
 
-  @Post('farms/:farmId/members')
-  addFarmMember(@Param('farmId') farmId: string, @Body() dto: AddFarmMemberDto) {
-    return this.users.addFarmMember(farmId, dto);
+  @Post(':id/password-reset')
+  resetPassword(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.users.resetPassword(id, user);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.users.remove(id, user);
   }
 }

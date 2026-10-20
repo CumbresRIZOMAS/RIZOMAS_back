@@ -12,6 +12,11 @@ import { CreateEvidenceDto } from '../evidence/dto/evidence.dto';
 import { EvidenceService } from '../evidence/evidence.service';
 import { CreatePurchaseDto, CreateSaleDto } from '../commercial/dto/commercial.dto';
 import { CommercialService } from '../commercial/commercial.service';
+import { CreateCoffeeProcessDto, CreateCoffeeProcessEventDto } from '../coffee/dto/coffee.dto';
+import { CoffeeService } from '../coffee/coffee.service';
+import { FarmAccessService } from '../../common/services/farm-access.service';
+import { CreateLotDto } from '../lots/dto/lot.dto';
+import { CreateCropDto } from '../crops/dto/crop.dto';
 import { SyncBatchDto, SyncOperationDto } from './dto/sync.dto';
 
 type SyncResult =
@@ -54,6 +59,8 @@ export class SyncService {
     private readonly soil: SoilService,
     private readonly evidence: EvidenceService,
     private readonly commercial: CommercialService,
+    private readonly coffee: CoffeeService,
+    private readonly farmAccess: FarmAccessService,
   ) {}
 
   async applyBatch(dto: SyncBatchDto, requestUser: RequestUser) {
@@ -112,7 +119,7 @@ export class SyncService {
             orderBy: { date: 'desc' },
             include: { diagnostics: { include: { recommendations: { include: { bioinput: { select: { name: true } } } } } } },
           },
-          coffeeProcesses: { include: { products: { include: { certifications: true } } } },
+          coffeeProcesses: { include: { lot: { include: { crops: true } }, events: { orderBy: { recordedAt: 'asc' } }, products: { include: { certifications: true } } } },
           // Compras y ventas solo para quien puede verlas (ASR-14).
           ...(verComercial ? { purchases: { include: { supplier: { select: { name: true } } } }, sales: true } : {}),
         },
@@ -135,27 +142,61 @@ export class SyncService {
     switch (operation.entity) {
       case 'farm':
         return this.prisma.farm.create({ data: { ...payload, ownerId: userId } as never });
-      case 'lot':
-        return this.prisma.lot.create({ data: payload as never });
-      case 'crop':
-        return this.prisma.crop.create({ data: payload as never });
-      case 'labor':
-        return this.labors.create(await validated(CreateLaborDto, payload), user);
-      case 'harvest':
-        return this.labors.createHarvest(await validated(CreateHarvestDto, payload), user);
-      case 'agronomic_management':
-        return this.labors.createAgronomicManagement(await validated(CreateAgronomicManagementDto, payload), user);
+      case 'lot': {
+        const dto = await validated(CreateLotDto, payload);
+        await this.farmAccess.assertAccess(user, dto.farmId);
+        return this.prisma.lot.create({ data: dto as never });
+      }
+      case 'crop': {
+        const dto = await validated(CreateCropDto, payload);
+        const lot = await this.prisma.lot.findUnique({ where: { id: dto.lotId }, select: { farmId: true } });
+        if (!lot) throw new BadRequestException('El lote del cultivo no existe');
+        await this.farmAccess.assertAccess(user, lot.farmId);
+        return this.prisma.crop.create({ data: dto as never });
+      }
+      case 'labor': {
+        const dto = await validated(CreateLaborDto, payload);
+        await this.farmAccess.assertAccess(user, dto.farmId);
+        return this.labors.create(dto, user);
+      }
+      case 'harvest': {
+        const dto = await validated(CreateHarvestDto, payload);
+        await this.farmAccess.assertAccess(user, dto.farmId);
+        return this.labors.createHarvest(dto, user);
+      }
+      case 'agronomic_management': {
+        const dto = await validated(CreateAgronomicManagementDto, payload);
+        await this.farmAccess.assertAccess(user, dto.farmId);
+        return this.labors.createAgronomicManagement(dto, user);
+      }
       case 'soil_analysis':
         requireRole(user, [AppRole.ADMIN_FINCA, AppRole.TECNICO], 'análisis de suelo');
-        return this.soil.createAnalysis(await validated(CreateSoilAnalysisDto, payload), user);
+        const dto = await validated(CreateSoilAnalysisDto, payload);
+        await this.farmAccess.assertAccess(user, dto.farmId);
+        return this.soil.createAnalysis(dto, user);
       case 'evidence':
         return this.evidence.create(await validated(CreateEvidenceDto, payload), user);
       case 'purchase':
         requireRole(user, [AppRole.ADMIN_FINCA], 'compras');
-        return this.commercial.createPurchase(await validated(CreatePurchaseDto, payload));
+        const dto = await validated(CreatePurchaseDto, payload);
+        await this.farmAccess.assertAccess(user, dto.farmId);
+        return this.commercial.createPurchase(dto, user);
       case 'sale':
         requireRole(user, [AppRole.ADMIN_FINCA], 'ventas');
-        return this.commercial.createSale(await validated(CreateSaleDto, payload));
+        const dto = await validated(CreateSaleDto, payload);
+        await this.farmAccess.assertAccess(user, dto.farmId);
+        return this.commercial.createSale(dto, user);
+      case 'coffee_process':
+        requireRole(user, [AppRole.ADMIN_FINCA, AppRole.ADMIN_CUMBRES, AppRole.TECNICO, AppRole.AGRICULTOR], 'proceso de café');
+        return this.coffee.create(await validated(CreateCoffeeProcessDto, payload), user);
+      case 'coffee_process_event': {
+        requireRole(user, [AppRole.ADMIN_FINCA, AppRole.ADMIN_CUMBRES, AppRole.TECNICO, AppRole.AGRICULTOR], 'etapa de café');
+        const coffeeProcessId = payload.coffeeProcessId;
+        if (typeof coffeeProcessId !== 'string') throw new BadRequestException('coffeeProcessId es obligatorio');
+        const { coffeeProcessId: _processId, ...eventPayload } = payload;
+        const dto = await validated(CreateCoffeeProcessEventDto, eventPayload);
+        return this.coffee.addEvent(coffeeProcessId, dto, user);
+      }
       default:
         throw new BadRequestException(`Entidad no soportada: ${operation.entity}`);
     }

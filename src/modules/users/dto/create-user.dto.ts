@@ -1,13 +1,10 @@
-import { IsBoolean, IsEmail, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { PartialType } from '@nestjs/mapped-types';
+import { IsBoolean, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { OmitType, PartialType } from '@nestjs/mapped-types';
 import { AppRole } from '../../../common/enums/app-role.enum';
 
 export class CreateUserDto {
-  @IsOptional()
   @IsString()
-  authUserId?: string;
-
-  @IsString()
+  @IsNotEmpty()
   name: string;
 
   @IsEmail()
@@ -15,18 +12,15 @@ export class CreateUserDto {
 
   @IsEnum(AppRole)
   role: AppRole;
-}
 
-export class AddFarmMemberDto {
-  @IsUUID()
-  userId: string;
-
-  @IsEnum(AppRole)
-  role: AppRole;
-}
-
-export class UpdateUserDto extends PartialType(CreateUserDto) {
   @IsOptional()
+  @IsUUID()
+  farmId?: string;
+}
+
+export class UpdateUserDto extends PartialType(OmitType(CreateUserDto, ['farmId'] as const)) {}
+
+export class UpdateUserStatusDto {
   @IsBoolean()
-  active?: boolean;
+  active: boolean;
 }

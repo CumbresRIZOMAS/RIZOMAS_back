@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { OmitType, PartialType } from '@nestjs/mapped-types';
+import { ArrayMaxSize, IsArray, IsBoolean, IsNumber, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreatePublicationDto {
   @IsUUID()
@@ -14,6 +15,10 @@ export class CreatePublicationDto {
 
   @IsOptional()
   @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
   region?: string;
 
   @IsOptional()
@@ -24,7 +29,14 @@ export class CreatePublicationDto {
   @IsOptional()
   @IsString()
   unit?: string;
+
+  /** Punto aproximado que la finca decide mostrar en el mapa público. */
+  @IsOptional()
+  @IsObject()
+  publicLocation?: Record<string, unknown>;
 }
+
+export class UpdatePublicationDto extends PartialType(OmitType(CreatePublicationDto, ['farmId'] as const)) {}
 
 /** Fotos que acompañan la publicación; reemplaza la selección anterior. */
 export class SetPublicationEvidencesDto {

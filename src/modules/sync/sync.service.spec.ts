@@ -23,9 +23,11 @@ function setup(role = AppRole.AGRICULTOR) {
   const soil = { createAnalysis: jest.fn() };
   const evidence = { create: jest.fn() };
   const commercial = { createPurchase: jest.fn(), createSale: jest.fn() };
-  const service = new SyncService(prisma as never, labors as never, soil as never, evidence as never, commercial as never);
+  const coffee = { create: jest.fn(), addEvent: jest.fn() };
+  const farmAccess = { assertAccess: jest.fn(async () => undefined) };
+  const service = new SyncService(prisma as never, labors as never, soil as never, evidence as never, commercial as never, coffee as never, farmAccess as never);
   const user = { sub: 'auth-1', role, appUserId: 'user-1' } as never;
-  return { service, prisma, labors, soil, commercial, user };
+  return { service, prisma, labors, soil, commercial, coffee, farmAccess, user };
 }
 
 const labor = { id: LABOR, farmId: FARM, lotId: LOT, type: 'MANEJO_AGRONOMICO', name: 'Limpieza', startDate: '2026-06-18T00:00:00Z' };
