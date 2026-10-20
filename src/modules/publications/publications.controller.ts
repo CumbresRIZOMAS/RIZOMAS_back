@@ -65,6 +65,13 @@ export class PublicationsController {
     return this.publications.findPublished();
   }
 
+  /** Una entrada por finca con al menos una publicación activa, sin exponer el id de la finca. */
+  @Public()
+  @Get('origins')
+  findPublishedOrigins() {
+    return this.publications.findPublishedOrigins();
+  }
+
   @Public()
   @Get(':id/traceability')
   traceability(@Param('id', ParseUUIDPipe) id: string) {

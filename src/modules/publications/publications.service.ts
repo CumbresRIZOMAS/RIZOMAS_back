@@ -134,6 +134,32 @@ export class PublicationsService {
     });
   }
 
+  /** Orígenes para el mapa público: muestra una sola publicación representativa por finca. */
+  async findPublishedOrigins() {
+    const publications = await this.prisma.publication.findMany({
+      where: { active: true },
+      orderBy: { publishedAt: 'desc' },
+      select: {
+        id: true,
+        farmId: true,
+        title: true,
+        description: true,
+        region: true,
+        quantity: true,
+        unit: true,
+        publicLocation: true,
+        publishedAt: true,
+        evidences: { where: { evidence: PUBLISHABLE }, select: { evidence: { select: PUBLIC_EVIDENCE_SELECT } } },
+      },
+    });
+    const farms = new Set<string>();
+    return publications.flatMap(({ farmId, ...publication }) => {
+      if (farms.has(farmId)) return [];
+      farms.add(farmId);
+      return [publication];
+    });
+  }
+
   async findOne(id: string) {
     const publication = await this.prisma.publication.findFirst({
       where: { id, active: true },

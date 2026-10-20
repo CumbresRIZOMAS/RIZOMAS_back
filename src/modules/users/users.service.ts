@@ -21,25 +21,30 @@ export class UsersService {
 
   async create(dto: CreateUserDto, actor: RequestUser) {
     this.assertRoleCanBeAssigned(actor, dto.role);
-    if (dto.farmId) await this.access.assertAccess(actor, dto.farmId);
-    if ([AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR].includes(dto.role) && !dto.farmId) {
-      throw new BadRequestException('Selecciona la finca a la que pertenecerá este usuario');
+    const farmIds = [...new Set([...(dto.farmIds ?? []), ...(dto.farmId ? [dto.farmId] : [])])];
+    for (const farmId of farmIds) await this.access.assertAccess(actor, farmId);
+    if ([AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR].includes(dto.role) && farmIds.length === 0) {
+      throw new BadRequestException('Selecciona al menos una finca a la que pertenecerá este usuario');
     }
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
     if (existing) throw new ConflictException('Ya existe un usuario con ese correo');
 
-    const invited = await this.authRequest('/invite', 'POST', {
+    const createdAuthUser = await this.authRequest('/admin/users', 'POST', {
       email: dto.email.toLowerCase(),
-      data: { full_name: dto.name.trim() },
-    }, { redirectTo: this.redirectUrl() });
-    const authUserId = typeof invited.id === 'string' ? invited.id : null;
-    if (!authUserId) throw new ServiceUnavailableException('Supabase no devolvió el identificador de la invitación');
+      password: dto.password,
+      email_confirm: true,
+      user_metadata: { full_name: dto.name.trim() },
+    });
+    const authUserId = typeof createdAuthUser.id === 'string' ? createdAuthUser.id : null;
+    if (!authUserId) throw new ServiceUnavailableException('Supabase no devolvió el identificador de la cuenta creada');
 
     let user: User;
     try {
       user = await this.prisma.$transaction(async (tx) => {
         const created = await tx.user.create({ data: { authUserId, name: dto.name.trim(), email: dto.email.toLowerCase(), role: dto.role } });
-        if (dto.farmId) await tx.farmUser.create({ data: { farmId: dto.farmId, userId: created.id, role: dto.role } });
+        if (farmIds.length) {
+          await tx.farmUser.createMany({ data: farmIds.map((farmId) => ({ farmId, userId: created.id, role: dto.role })) });
+        }
         return created;
       });
     } catch (error) {
@@ -47,7 +52,7 @@ export class UsersService {
       await this.authRequest(`/admin/users/${authUserId}`, 'DELETE').catch(() => undefined);
       throw error;
     }
-    await this.audit.record({ userId: actor.appUserId ?? actor.sub, entity: 'User', entityId: user.id, action: 'INVITE', after: user });
+    await this.audit.record({ userId: actor.appUserId ?? actor.sub, entity: 'User', entityId: user.id, action: 'CREATE', after: user });
     return user;
   }
 
@@ -60,12 +65,36 @@ export class UsersService {
           { farmMembers: { some: { farmId: { in: farmIds } } } },
           { ownedFarms: { some: { id: { in: farmIds } } } },
         ] };
-    return this.prisma.user.findMany({ where, orderBy: { createdAt: 'desc' } });
+    const farmScope = farmIds === null ? {} : { where: { id: { in: farmIds } } };
+    return this.prisma.user.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        farmMembers: {
+          ...(farmIds === null ? {} : { where: { farmId: { in: farmIds } } }),
+          select: { role: true, farm: { select: { id: true, name: true } } },
+        },
+        ownedFarms: { ...farmScope, select: { id: true, name: true } },
+      },
+    });
   }
 
   async update(id: string, dto: UpdateUserDto, actor: RequestUser) {
     const before = await this.assertCanManage(id, actor);
     if (dto.role) this.assertRoleCanBeAssigned(actor, dto.role, before.role);
+    const farmIds = dto.farmIds === undefined ? undefined : [...new Set(dto.farmIds)];
+    const actorFarmIds = farmIds === undefined ? null : await this.access.accessibleFarmIds(actor);
+    if (farmIds && actorFarmIds !== null) {
+      for (const farmId of farmIds) await this.access.assertAccess(actor, farmId);
+    }
+    const inaccessibleMemberships = farmIds === undefined || actorFarmIds === null
+      ? []
+      : before.farmMembers.map((membership) => membership.farmId).filter((farmId) => !actorFarmIds.includes(farmId));
+    const resultingFarmIds = farmIds === undefined ? undefined : [...new Set([...farmIds, ...inaccessibleMemberships])];
+    const resultingRole = dto.role ?? before.role;
+    if (resultingFarmIds && [AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR].includes(resultingRole) && resultingFarmIds.length === 0) {
+      throw new BadRequestException('Este rol debe estar asignado al menos a una finca');
+    }
     if (dto.email && dto.email.toLowerCase() !== before.email.toLowerCase()) {
       const duplicate = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
       if (duplicate) throw new ConflictException('Ya existe un usuario con ese correo');
@@ -77,12 +106,24 @@ export class UsersService {
         ...(dto.name ? { user_metadata: { full_name: dto.name.trim() } } : {}),
       });
     }
+    const userData = { ...dto };
+    delete userData.farmIds;
     const after = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.user.update({
         where: { id },
-        data: { ...dto, ...(email ? { email } : {}), ...(dto.name ? { name: dto.name.trim() } : {}) },
+        data: { ...userData, ...(email ? { email } : {}), ...(dto.name ? { name: dto.name.trim() } : {}) },
       });
       if (dto.role) await tx.farmUser.updateMany({ where: { userId: id }, data: { role: dto.role } });
+      if (farmIds !== undefined) {
+        const scopedFarmIds = actorFarmIds === null ? null : actorFarmIds;
+        await tx.farmUser.deleteMany({
+          where: { userId: id, ...(scopedFarmIds === null ? {} : { farmId: { in: scopedFarmIds } }) },
+        });
+        const membershipsToCreate = resultingFarmIds!.filter((farmId) => scopedFarmIds === null || scopedFarmIds.includes(farmId));
+        if (membershipsToCreate.length) {
+          await tx.farmUser.createMany({ data: membershipsToCreate.map((farmId) => ({ farmId, userId: id, role: resultingRole })) });
+        }
+      }
       return updated;
     });
     await this.audit.record({ userId: actor.appUserId ?? actor.sub, entity: 'User', entityId: id, action: 'UPDATE', before, after });
@@ -149,9 +190,19 @@ export class UsersService {
 
   async findOne(id: string, actor: RequestUser) {
     const user = await this.assertCanManage(id, actor);
+    const farmIds = await this.access.accessibleFarmIds(actor);
     return this.prisma.user.findUnique({
       where: { id },
-      include: { farmMembers: { include: { farm: true } }, ownedFarms: true },
+      include: {
+        farmMembers: {
+          ...(farmIds === null ? {} : { where: { farmId: { in: farmIds } } }),
+          include: { farm: { select: { id: true, name: true } } },
+        },
+        ownedFarms: {
+          ...(farmIds === null ? {} : { where: { id: { in: farmIds } } }),
+          select: { id: true, name: true },
+        },
+      },
     });
   }
 
