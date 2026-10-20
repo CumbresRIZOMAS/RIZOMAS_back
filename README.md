@@ -123,6 +123,11 @@ Crear y aplicar una migración durante el desarrollo:
 npm run prisma:migrate
 ```
 
+Si usas Supabase, configura `DATABASE_URL` con el **Session Pooler** (puerto
+5432) al ejecutar migraciones. El Transaction Pooler (6543) puede dejar Prisma
+esperando al aplicar DDL. Para el tráfico normal del backend puedes seguir
+usando el Transaction Pooler recomendado para Render.
+
 Aplicar migraciones existentes en un entorno de despliegue:
 
 ```bash
@@ -338,7 +343,19 @@ npm test
 | `npm run prisma:generate` | Genera el cliente Prisma |
 | `npm run prisma:migrate` | Crea/aplica migraciones en desarrollo |
 | `npm run prisma:migrate:deploy` | Aplica migraciones en despliegue |
+| `npm run prisma:seed:demo` | Inserta datos sintéticos de demostración una sola vez |
+| `npm run prisma:seed:auth-demo` | Vincula usuarios activos de Supabase Auth y crea datos de prueba por usuario |
 | `npm run prisma:studio` | Abre Prisma Studio |
+
+La carga de demostración crea una finca ficticia identificada como
+`DEMO-RIZOMAS-001`, con lotes, cultivos, labores, cosecha, análisis de suelo,
+bioinsumo, condiciones ambientales e indicadores. Es idempotente: si esa finca
+ya existe, no agrega registros repetidos.
+
+`prisma:seed:auth-demo` crea o vincula un `User` por UUID de Supabase Auth y
+asigna a cada cuenta una finca sintética propia, con lotes, cultivos, labores,
+cosecha, análisis de suelo y proceso de café. Solo procesa cuentas sin bloqueo
+vigente. Es idempotente y no modifica contraseñas ni usuarios de Auth.
 
 ## Estado y próximos pasos
 
