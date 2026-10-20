@@ -81,7 +81,7 @@ export class UsersService {
 
   async update(id: string, dto: UpdateUserDto, actor: RequestUser) {
     const before = await this.assertCanManage(id, actor);
-    if (dto.role) this.assertRoleCanBeAssigned(actor, dto.role, before.role);
+    if (dto.role) this.assertRoleCanBeAssigned(actor, dto.role, before.role as AppRole);
     const farmIds = dto.farmIds === undefined ? undefined : [...new Set(dto.farmIds)];
     const actorFarmIds = farmIds === undefined ? null : await this.access.accessibleFarmIds(actor);
     if (farmIds && actorFarmIds !== null) {
@@ -91,7 +91,7 @@ export class UsersService {
       ? []
       : before.farmMembers.map((membership) => membership.farmId).filter((farmId) => !actorFarmIds.includes(farmId));
     const resultingFarmIds = farmIds === undefined ? undefined : [...new Set([...farmIds, ...inaccessibleMemberships])];
-    const resultingRole = dto.role ?? before.role;
+    const resultingRole: AppRole = dto.role ?? (before.role as AppRole);
     if (resultingFarmIds && [AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR].includes(resultingRole) && resultingFarmIds.length === 0) {
       throw new BadRequestException('Este rol debe estar asignado al menos a una finca');
     }

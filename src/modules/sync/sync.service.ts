@@ -169,23 +169,27 @@ export class SyncService {
         await this.farmAccess.assertAccess(user, dto.farmId);
         return this.labors.createAgronomicManagement(dto, user);
       }
-      case 'soil_analysis':
+      case 'soil_analysis': {
         requireRole(user, [AppRole.ADMIN_FINCA, AppRole.TECNICO], 'análisis de suelo');
         const dto = await validated(CreateSoilAnalysisDto, payload);
         await this.farmAccess.assertAccess(user, dto.farmId);
         return this.soil.createAnalysis(dto, user);
-      case 'evidence':
+      }
+      case 'evidence': {
         return this.evidence.create(await validated(CreateEvidenceDto, payload), user);
-      case 'purchase':
+      }
+      case 'purchase': {
         requireRole(user, [AppRole.ADMIN_FINCA], 'compras');
         const dto = await validated(CreatePurchaseDto, payload);
         await this.farmAccess.assertAccess(user, dto.farmId);
         return this.commercial.createPurchase(dto, user);
-      case 'sale':
+      }
+      case 'sale': {
         requireRole(user, [AppRole.ADMIN_FINCA], 'ventas');
         const dto = await validated(CreateSaleDto, payload);
         await this.farmAccess.assertAccess(user, dto.farmId);
         return this.commercial.createSale(dto, user);
+      }
       case 'coffee_process':
         requireRole(user, [AppRole.ADMIN_FINCA, AppRole.ADMIN_CUMBRES, AppRole.TECNICO, AppRole.AGRICULTOR], 'proceso de café');
         return this.coffee.create(await validated(CreateCoffeeProcessDto, payload), user);

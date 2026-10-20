@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { EvidenceStatus, Visibility } from '@prisma/client';
+import { EvidenceStatus, Prisma, Visibility } from '@prisma/client';
 import { AuditService } from '../../common/services/audit.service';
 import { FarmAccessService } from '../../common/services/farm-access.service';
 import { R2Service } from '../../common/storage/r2.service';
@@ -29,7 +29,9 @@ export class PublicationsService {
       if (!harvest) throw new NotFoundException('Cosecha no encontrada');
       if (harvest.labor.farmId !== dto.farmId) throw new BadRequestException('La cosecha no pertenece a la finca');
     }
-    const publication = await this.prisma.publication.create({ data: dto });
+    const publication = await this.prisma.publication.create({
+      data: { ...dto, publicLocation: dto.publicLocation as Prisma.InputJsonValue | undefined },
+    });
     await this.audit.record({ userId: user.appUserId ?? user.sub, entity: 'Publication', entityId: publication.id, action: 'CREATE', after: publication });
     return publication;
   }
