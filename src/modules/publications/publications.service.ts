@@ -125,7 +125,6 @@ export class PublicationsService {
       select: {
         id: true,
         title: true,
-        description: true,
         region: true,
         quantity: true,
         unit: true,
@@ -146,7 +145,6 @@ export class PublicationsService {
         farmId: true,
         farm: { select: { municipality: true, region: true } },
         title: true,
-        description: true,
         region: true,
         quantity: true,
         unit: true,
