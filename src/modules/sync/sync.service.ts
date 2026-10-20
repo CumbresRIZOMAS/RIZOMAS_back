@@ -106,11 +106,14 @@ export class SyncService {
    */
   async pull(_since: string | undefined, requestUser: RequestUser) {
     const userId = await this.resolveUserId(requestUser);
+    const accessibleFarmIds = await this.farmAccess.accessibleFarmIds(requestUser);
     const verComercial = [AppRole.ADMIN_FINCA, AppRole.ADMIN_CUMBRES].includes(requestUser.role as AppRole);
     const [user, farms] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true, role: true } }),
       this.prisma.farm.findMany({
-        where: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
+        // Usa la misma regla de alcance que los demás endpoints: Cumbres ve
+        // todas las fincas; los demás, solo las que poseen o integran.
+        ...(accessibleFarmIds === null ? {} : { where: { id: { in: accessibleFarmIds } } }),
         omit: { exactLocation: true },
         include: {
           lots: { include: { crops: true } },

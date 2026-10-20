@@ -57,6 +57,12 @@ export class UsersService {
   }
 
   async findAll(actor: RequestUser) {
+    // Supabase Auth y la tabla local User pueden contener cuentas históricas
+    // distintas: por ejemplo, cuentas móviles que todavía no habían llamado
+    // al backend. El administrador de Cumbres sincroniza esas identidades para
+    // que también aparezcan en el listado y puedan asignarles finca y rol.
+    if (actor.role === AppRole.ADMIN_CUMBRES) await this.syncSupabaseUsers();
+
     const farmIds = await this.access.accessibleFarmIds(actor);
     const where = farmIds === null
       ? {}
@@ -79,11 +85,65 @@ export class UsersService {
     });
   }
 
+  private async syncSupabaseUsers() {
+    const pageSize = 100;
+    for (let page = 1; ; page += 1) {
+      const response = await this.authRequest(`/admin/users?page=${page}&per_page=${pageSize}`, 'GET');
+      const authUsers = Array.isArray(response.users) ? response.users : [];
+
+      for (const rawUser of authUsers) {
+        if (!rawUser || typeof rawUser !== 'object') continue;
+        const authUser = rawUser as {
+          id?: unknown;
+          email?: unknown;
+          user_metadata?: Record<string, unknown>;
+          banned_until?: unknown;
+        };
+        if (typeof authUser.id !== 'string' || typeof authUser.email !== 'string' || !authUser.email.trim()) continue;
+
+        const email = authUser.email.trim().toLowerCase();
+        const localUser = await this.prisma.user.findUnique({ where: { authUserId: authUser.id } }) ??
+          await this.prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
+        if (localUser) {
+          if (!localUser.authUserId) {
+            await this.prisma.user.update({ where: { id: localUser.id }, data: { authUserId: authUser.id } });
+          }
+          continue;
+        }
+
+        const metadata = authUser.user_metadata ?? {};
+        const metadataName = [metadata.full_name, metadata.name, metadata.display_name]
+          .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+        const bannedUntil = typeof authUser.banned_until === 'string' ? Date.parse(authUser.banned_until) : NaN;
+        try {
+          await this.prisma.user.create({
+            data: {
+              authUserId: authUser.id,
+              email,
+              name: metadataName?.trim() ?? email.split('@')[0],
+              // El rol de Auth no se toma de user_metadata: los permisos se
+              // asignan desde este panel y nunca desde datos editables por el usuario.
+              role: AppRole.AGRICULTOR,
+              active: !Number.isFinite(bannedUntil) || bannedUntil <= Date.now(),
+            },
+          });
+        } catch (error) {
+          // Dos administradores pueden abrir el listado al mismo tiempo. Si
+          // uno ya creó el perfil, la sincronización sigue siendo idempotente.
+          const linked = await this.prisma.user.findUnique({ where: { authUserId: authUser.id } });
+          if (!linked) throw error;
+        }
+      }
+
+      if (authUsers.length < pageSize) break;
+    }
+  }
+
   async update(id: string, dto: UpdateUserDto, actor: RequestUser) {
     const before = await this.assertCanManage(id, actor);
     if (dto.role) this.assertRoleCanBeAssigned(actor, dto.role, before.role as AppRole);
     const farmIds = dto.farmIds === undefined ? undefined : [...new Set(dto.farmIds)];
-    const actorFarmIds = farmIds === undefined ? null : await this.access.accessibleFarmIds(actor);
+    const actorFarmIds = await this.access.accessibleFarmIds(actor);
     if (farmIds && actorFarmIds !== null) {
       for (const farmId of farmIds) await this.access.assertAccess(actor, farmId);
     }
@@ -113,7 +173,12 @@ export class UsersService {
         where: { id },
         data: { ...userData, ...(email ? { email } : {}), ...(dto.name ? { name: dto.name.trim() } : {}) },
       });
-      if (dto.role) await tx.farmUser.updateMany({ where: { userId: id }, data: { role: dto.role } });
+      if (dto.role) {
+        await tx.farmUser.updateMany({
+          where: { userId: id, ...(actorFarmIds === null ? {} : { farmId: { in: actorFarmIds } }) },
+          data: { role: dto.role },
+        });
+      }
       if (farmIds !== undefined) {
         const scopedFarmIds = actorFarmIds === null ? null : actorFarmIds;
         await tx.farmUser.deleteMany({
