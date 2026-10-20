@@ -144,6 +144,7 @@ export class PublicationsService {
       select: {
         id: true,
         farmId: true,
+        farm: { select: { municipality: true, region: true } },
         title: true,
         description: true,
         region: true,
@@ -155,10 +156,14 @@ export class PublicationsService {
       },
     });
     const farms = new Set<string>();
-    return publications.flatMap(({ farmId, ...publication }) => {
+    return publications.flatMap(({ farmId, farm, ...publication }) => {
       if (farms.has(farmId)) return [];
       farms.add(farmId);
-      return [publication];
+      return [{
+        ...publication,
+        municipality: farm.municipality,
+        region: publication.region ?? farm.region,
+      }];
     });
   }
 
