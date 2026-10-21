@@ -24,7 +24,10 @@ function setup(role = AppRole.AGRICULTOR) {
   const evidence = { create: jest.fn() };
   const commercial = { createPurchase: jest.fn(), createSale: jest.fn() };
   const coffee = { create: jest.fn(), addEvent: jest.fn() };
-  const farmAccess = { assertAccess: jest.fn(async () => undefined) };
+  const farmAccess = {
+    assertAccess: jest.fn(async () => undefined),
+    accessibleFarmIds: jest.fn(async () => (role === AppRole.ADMIN_CUMBRES ? null : [])),
+  };
   const service = new SyncService(prisma as never, labors as never, soil as never, evidence as never, commercial as never, coffee as never, farmAccess as never);
   const user = { sub: 'auth-1', role, appUserId: 'user-1' } as never;
   return { service, prisma, labors, soil, commercial, coffee, farmAccess, user };
