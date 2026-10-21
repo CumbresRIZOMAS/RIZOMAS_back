@@ -235,6 +235,21 @@ export class PublicationsService {
       select: {
         region: true,
         farmType: true,
+        lots: {
+          select: {
+            crops: { select: { species: true, variety: true } },
+            _count: { select: { crops: true, bioinputApplications: true } },
+          },
+        },
+        labors: {
+          orderBy: { startDate: 'desc' },
+          select: {
+            type: true,
+            startDate: true,
+            harvest: { select: { quantity: true, unit: true, quality: true } },
+          },
+        },
+        soilAnalyses: { select: { recommendations: { select: { id: true } } } },
         coffeeProcesses: {
           orderBy: { startedAt: 'asc' },
           select: publicCoffeeProcessSelect,

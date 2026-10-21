@@ -10,7 +10,7 @@ export type PublicTraceability = {
   origin: { region: string | null; farmType: string | null };
   crop: { species: string; variety: string | null } | null;
   harvest: { date: Date; quantity: string; unit: string; quality: string | null } | null;
-  practices: { laborsByType: Record<string, number>; soilAnalyses: number; bioinputApplications: number };
+  practices: { laborsByType: Record<string, number>; soilAnalyses: number; bioinputApplications: number; recommendations: number };
   processes: {
     stage: string;
     startedAt: Date;
@@ -22,6 +22,12 @@ export type PublicTraceability = {
 
 export type PublicFarmTraceability = {
   origin: { region: string | null; farmType: string | null };
+  crop: PublicTraceability['crop'];
+  harvest: PublicTraceability['harvest'];
+  practices: PublicTraceability['practices'];
+  lotsCount: number;
+  cropsCount: number;
+  harvestsCount: number;
   processes: PublicTraceability['processes'];
 };
 
@@ -75,6 +81,7 @@ export const publicationForTraceability = {
               select: {
                 labors: { select: { type: true } },
                 crops: { select: { labors: { select: { type: true } } } },
+                soilAnalyses: { select: { recommendations: { select: { id: true } } } },
                 _count: { select: { soilAnalyses: true, bioinputApplications: true } },
               },
             },
@@ -117,6 +124,7 @@ export function toPublicTraceability(row: Row): PublicTraceability {
       laborsByType,
       soilAnalyses: lot?._count.soilAnalyses ?? 0,
       bioinputApplications: lot?._count.bioinputApplications ?? 0,
+      recommendations: lot?.soilAnalyses.reduce((total, analysis) => total + analysis.recommendations.length, 0) ?? 0,
     },
     // La app móvil puede asociar el proceso al lote sin enlazarlo a una
     // cosecha. La proyección por finca permite mostrar ambos casos.
@@ -138,10 +146,33 @@ export function toPublicTraceability(row: Row): PublicTraceability {
 export function toPublicFarmTraceability(row: {
   region: string | null;
   farmType: string | null;
+  lots: { crops: { species: string; variety: string | null }[]; _count: { crops: number; bioinputApplications: number } }[];
+  labors: { type: string; startDate: Date; harvest: { quantity: Prisma.Decimal; unit: string; quality: string | null } | null }[];
+  soilAnalyses: { recommendations: { id: string }[] }[];
   coffeeProcesses: Prisma.CoffeeProcessGetPayload<{ select: typeof publicCoffeeProcessSelect }>[];
 }): PublicFarmTraceability {
+  const laborsByType: Record<string, number> = {};
+  for (const labor of row.labors) laborsByType[labor.type] = (laborsByType[labor.type] ?? 0) + 1;
+  const latestHarvest = row.labors.find((labor) => labor.harvest);
+  const crops = row.lots.flatMap((lot) => lot.crops);
   return {
     origin: { region: row.region, farmType: row.farmType },
+    crop: crops[0] ? { species: crops[0].species, variety: crops[0].variety } : null,
+    harvest: latestHarvest?.harvest ? {
+      date: latestHarvest.startDate,
+      quantity: latestHarvest.harvest.quantity.toString(),
+      unit: latestHarvest.harvest.unit,
+      quality: latestHarvest.harvest.quality,
+    } : null,
+    practices: {
+      laborsByType,
+      soilAnalyses: row.soilAnalyses.length,
+      bioinputApplications: row.lots.reduce((total, lot) => total + lot._count.bioinputApplications, 0),
+      recommendations: row.soilAnalyses.reduce((total, analysis) => total + analysis.recommendations.length, 0),
+    },
+    lotsCount: row.lots.length,
+    cropsCount: crops.length,
+    harvestsCount: row.labors.filter((labor) => labor.harvest).length,
     processes: row.coffeeProcesses.map((p) => ({
       stage: p.currentStage,
       startedAt: p.startedAt,
