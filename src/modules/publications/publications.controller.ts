@@ -79,6 +79,12 @@ export class PublicationsController {
   }
 
   @Public()
+  @Get('farms/:farmId/traceability')
+  traceabilityByFarm(@Param('farmId', ParseUUIDPipe) farmId: string) {
+    return this.publications.publicFarmTraceability(farmId);
+  }
+
+  @Public()
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.publications.findOne(id);

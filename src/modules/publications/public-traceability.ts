@@ -20,6 +20,29 @@ export type PublicTraceability = {
   }[];
 };
 
+export type PublicFarmTraceability = {
+  origin: { region: string | null; farmType: string | null };
+  processes: PublicTraceability['processes'];
+};
+
+/** Campos de proceso autorizados para la vista pública; omite notas, lote y finca. */
+export const publicCoffeeProcessSelect = {
+  currentStage: true,
+  startedAt: true,
+  finishedAt: true,
+  events: {
+    orderBy: { recordedAt: 'asc' as const },
+    select: { stage: true, recordedAt: true, inputKg: true, outputKg: true },
+  },
+  products: {
+    select: {
+      finalizedAt: true,
+      destination: true,
+      certifications: { select: { certifier: true, status: true } },
+    },
+  },
+} satisfies Prisma.CoffeeProcessSelect;
+
 export const publicationForTraceability = {
   select: {
     id: true,
@@ -28,7 +51,16 @@ export const publicationForTraceability = {
     quantity: true,
     unit: true,
     publishedAt: true,
-    farm: { select: { region: true, farmType: true } },
+    farm: {
+      select: {
+        region: true,
+        farmType: true,
+        coffeeProcesses: {
+          orderBy: { startedAt: 'asc' as const },
+          select: publicCoffeeProcessSelect,
+        },
+      },
+    },
     harvest: {
       select: {
         quantity: true,
@@ -50,16 +82,7 @@ export const publicationForTraceability = {
         },
         coffeeProcesses: {
           orderBy: { startedAt: 'asc' as const },
-          select: {
-            currentStage: true,
-            startedAt: true,
-            finishedAt: true,
-            events: {
-              orderBy: { recordedAt: 'asc' as const },
-              select: { stage: true, recordedAt: true, inputKg: true, outputKg: true },
-            },
-            products: { select: { finalizedAt: true, destination: true, certifications: { select: { certifier: true, status: true } } } },
-          },
+          select: publicCoffeeProcessSelect,
         },
       },
     },
@@ -95,11 +118,35 @@ export function toPublicTraceability(row: Row): PublicTraceability {
       soilAnalyses: lot?._count.soilAnalyses ?? 0,
       bioinputApplications: lot?._count.bioinputApplications ?? 0,
     },
-    processes: (harvest?.coffeeProcesses ?? []).map((p) => ({
+    // La app móvil puede asociar el proceso al lote sin enlazarlo a una
+    // cosecha. La proyección por finca permite mostrar ambos casos.
+    processes: (row.farm.coffeeProcesses ?? harvest?.coffeeProcesses ?? []).map((p) => ({
       stage: p.currentStage,
       startedAt: p.startedAt,
       finishedAt: p.finishedAt,
       events: (p.events ?? []).map((event) => ({
+        stage: event.stage,
+        recordedAt: event.recordedAt,
+        inputKg: event.inputKg?.toString() ?? null,
+        outputKg: event.outputKg?.toString() ?? null,
+      })),
+      products: p.products,
+    })),
+  };
+}
+
+export function toPublicFarmTraceability(row: {
+  region: string | null;
+  farmType: string | null;
+  coffeeProcesses: Prisma.CoffeeProcessGetPayload<{ select: typeof publicCoffeeProcessSelect }>[];
+}): PublicFarmTraceability {
+  return {
+    origin: { region: row.region, farmType: row.farmType },
+    processes: row.coffeeProcesses.map((p) => ({
+      stage: p.currentStage,
+      startedAt: p.startedAt,
+      finishedAt: p.finishedAt,
+      events: p.events.map((event) => ({
         stage: event.stage,
         recordedAt: event.recordedAt,
         inputKg: event.inputKg?.toString() ?? null,

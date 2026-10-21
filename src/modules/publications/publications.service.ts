@@ -7,7 +7,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePublicationDto, PublishPublicationDto, SetPublicationEvidencesDto, UpdatePublicationDto } from './dto/publication.dto';
 import { PUBLIC_EVIDENCE_SELECT } from '../evidence/public-evidence';
-import { publicationForTraceability, toPublicTraceability } from './public-traceability';
+import { publicationForTraceability, publicCoffeeProcessSelect, toPublicFarmTraceability, toPublicTraceability } from './public-traceability';
 
 /** Una foto sale en el portal solo si se aprobó en moderación y se autorizó como pública. */
 const PUBLISHABLE = { status: EvidenceStatus.APROBADA, visibility: Visibility.PUBLICA };
@@ -223,6 +223,26 @@ export class PublicationsService {
     const row = await this.prisma.publication.findFirst({ where: { id, active: true }, ...publicationForTraceability });
     if (!row) throw new NotFoundException('Publicación no encontrada');
     return toPublicTraceability(row);
+  }
+
+  /** Etapas públicas de fincas del mapa que todavía no tienen publicación activa. */
+  async publicFarmTraceability(farmId: string) {
+    const row = await this.prisma.farm.findFirst({
+      where: {
+        id: farmId,
+        OR: [{ municipality: { not: null } }, { region: { not: null } }],
+      },
+      select: {
+        region: true,
+        farmType: true,
+        coffeeProcesses: {
+          orderBy: { startedAt: 'asc' },
+          select: publicCoffeeProcessSelect,
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Origen público no encontrado');
+    return toPublicFarmTraceability(row);
   }
 
   private async farmOf(id: string) {
