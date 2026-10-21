@@ -15,6 +15,7 @@ export type PublicTraceability = {
     stage: string;
     startedAt: Date;
     finishedAt: Date | null;
+    events: { stage: string; recordedAt: Date; inputKg: string | null; outputKg: string | null }[];
     products: { finalizedAt: Date | null; destination: string | null; certifications: { certifier: string; status: string }[] }[];
   }[];
 };
@@ -53,6 +54,10 @@ export const publicationForTraceability = {
             currentStage: true,
             startedAt: true,
             finishedAt: true,
+            events: {
+              orderBy: { recordedAt: 'asc' as const },
+              select: { stage: true, recordedAt: true, inputKg: true, outputKg: true },
+            },
             products: { select: { finalizedAt: true, destination: true, certifications: { select: { certifier: true, status: true } } } },
           },
         },
@@ -94,6 +99,12 @@ export function toPublicTraceability(row: Row): PublicTraceability {
       stage: p.currentStage,
       startedAt: p.startedAt,
       finishedAt: p.finishedAt,
+      events: (p.events ?? []).map((event) => ({
+        stage: event.stage,
+        recordedAt: event.recordedAt,
+        inputKg: event.inputKg?.toString() ?? null,
+        outputKg: event.outputKg?.toString() ?? null,
+      })),
       products: p.products,
     })),
   };
