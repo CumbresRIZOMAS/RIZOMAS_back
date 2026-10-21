@@ -138,33 +138,65 @@ export class PublicationsService {
 
   /** Orígenes para el mapa público: muestra una sola publicación representativa por finca. */
   async findPublishedOrigins() {
-    const publications = await this.prisma.publication.findMany({
-      where: { active: true },
-      orderBy: { publishedAt: 'desc' },
-      select: {
-        id: true,
-        farmId: true,
-        farm: { select: { municipality: true, region: true } },
-        title: true,
-        description: true,
-        region: true,
-        quantity: true,
-        unit: true,
-        publicLocation: true,
-        publishedAt: true,
-        evidences: { where: { evidence: PUBLISHABLE }, select: { evidence: { select: PUBLIC_EVIDENCE_SELECT } } },
-      },
-    });
-    const farms = new Set<string>();
-    return publications.flatMap(({ farmId, farm, ...publication }) => {
-      if (farms.has(farmId)) return [];
-      farms.add(farmId);
+    const [publications, farms] = await Promise.all([
+      this.prisma.publication.findMany({
+        where: { active: true },
+        orderBy: { publishedAt: 'desc' },
+        select: {
+          id: true,
+          farmId: true,
+          farm: { select: { name: true, municipality: true, region: true } },
+          title: true,
+          description: true,
+          region: true,
+          quantity: true,
+          unit: true,
+          publicLocation: true,
+          publishedAt: true,
+          evidences: { where: { evidence: PUBLISHABLE }, select: { evidence: { select: PUBLIC_EVIDENCE_SELECT } } },
+        },
+      }),
+      // El portal también debe ubicar las fincas que ya registraron municipio
+      // o departamento, aunque todavía no hayan publicado una trazabilidad.
+      // Solo se expone el nombre y la ubicación administrativa; nunca la
+      // ubicación exacta ni datos operativos de esas fincas.
+      this.prisma.farm.findMany({
+        where: { OR: [{ municipality: { not: null } }, { region: { not: null } }] },
+        orderBy: [{ region: 'asc' }, { municipality: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true, municipality: true, region: true },
+      }),
+    ]);
+
+    const farmsWithPublication = new Set(publications.map((publication) => publication.farmId));
+    const representedFarms = new Set<string>();
+    const publishedOrigins = publications.flatMap(({ farmId, farm, ...publication }) => {
+      if (representedFarms.has(farmId)) return [];
+      representedFarms.add(farmId);
       return [{
         ...publication,
+        farmName: farm.name,
         municipality: farm.municipality,
         region: publication.region ?? farm.region,
+        isPublished: true,
       }];
     });
+    const registeredOrigins = farms
+      .filter((farm) => Boolean(farm.municipality?.trim() || farm.region?.trim()) && !farmsWithPublication.has(farm.id))
+      .map((farm) => ({
+        id: `farm:${farm.id}`,
+        title: farm.name,
+        description: null,
+        municipality: farm.municipality,
+        region: farm.region,
+        quantity: null,
+        unit: null,
+        publicLocation: null,
+        publishedAt: null,
+        evidences: [],
+        isPublished: false,
+      }));
+
+    return [...publishedOrigins, ...registeredOrigins];
   }
 
   async findOne(id: string) {
