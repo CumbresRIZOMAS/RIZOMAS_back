@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+function toAuditJson(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
 
 @Injectable()
 export class AuditService {
@@ -25,8 +31,8 @@ export class AuditService {
         entity: input.entity,
         entityId: input.entityId,
         action: input.action,
-        before: input.before as never,
-        after: input.after as never,
+        before: toAuditJson(input.before),
+        after: toAuditJson(input.after),
         userId: user?.id,
       },
     });
