@@ -3,9 +3,15 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { FarmAccessService } from '../../common/services/farm-access.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
-import { CreateCertificationDto, CreateCoffeeProcessDto, CreateCoffeeProcessEventDto, CreateProductFinalDto, UpdateCoffeeProcessDto } from './dto/coffee.dto';
+import { COFFEE_STAGES, CreateCertificationDto, CreateCoffeeProcessDto, CreateCoffeeProcessEventDto, CreateProductFinalDto, UpdateCoffeeProcessDto } from './dto/coffee.dto';
 
 const processInclude = { harvest: true, lot: { include: { crops: true } }, events: { orderBy: { recordedAt: 'asc' as const } }, products: { include: { certifications: true } } } as const;
+const normalizeStage = (stage: string) => stage.trim().toLowerCase() === 'beneficio' ? 'Despulpado' : stage.trim().toLowerCase() === 'tostado' ? 'Tostión' : stage.trim();
+const assertStage = (stage: string) => {
+  const normalized = normalizeStage(stage);
+  if (!(COFFEE_STAGES as readonly string[]).includes(normalized)) throw new BadRequestException(`Etapa de café no válida: ${stage}`);
+  return normalized;
+};
 
 /** Procesos de café (RF-14): cosecha → beneficio → … → producto final con certificaciones. */
 @Injectable()
@@ -18,6 +24,7 @@ export class CoffeeService {
 
   async create(dto: CreateCoffeeProcessDto, user: RequestUser) {
     await this.access.assertAccess(user, dto.farmId);
+    dto = { ...dto, currentStage: assertStage(dto.currentStage) };
     if (dto.harvestId) {
       // Integridad (ASR-07): la cosecha de origen debe ser de la misma finca.
       const harvest = await this.prisma.harvest.findUnique({ where: { id: dto.harvestId }, select: { labor: { select: { farmId: true } } } });
@@ -41,6 +48,10 @@ export class CoffeeService {
 
   async addEvent(processId: string, dto: CreateCoffeeProcessEventDto, user: RequestUser) {
     const process = await this.findOne(processId, user);
+    dto = { ...dto, stage: assertStage(dto.stage) };
+    if (dto.stage === 'Lavado' && dto.compostReuse && (!dto.wastewaterLiters || !dto.wastewaterDestination?.trim())) {
+      throw new BadRequestException('El lavado reutilizado debe indicar litros de agua residual y destino');
+    }
     const event = await this.prisma.$transaction(async (tx) => {
       const created = await tx.coffeeProcessEvent.create({ data: { ...dto, coffeeProcessId: processId } });
       await tx.coffeeProcess.update({ where: { id: processId }, data: { currentStage: dto.stage } });
@@ -70,6 +81,7 @@ export class CoffeeService {
   /** Avanza la etapa, agrega notas o cierra el proceso. */
   async update(id: string, dto: UpdateCoffeeProcessDto, user: RequestUser) {
     const before = await this.findOne(id, user);
+    if (dto.currentStage) dto = { ...dto, currentStage: assertStage(dto.currentStage) };
     if (dto.finishedAt && dto.finishedAt < before.startedAt) throw new BadRequestException('El proceso no puede terminar antes de empezar');
     const after = await this.prisma.coffeeProcess.update({ where: { id }, data: dto, include: processInclude });
     await this.audit.record({ userId: user.appUserId ?? user.sub, entity: 'CoffeeProcess', entityId: id, action: 'UPDATE', before, after });

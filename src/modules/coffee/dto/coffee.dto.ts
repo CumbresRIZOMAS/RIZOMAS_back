@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDate, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsBoolean, IsDate, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+
+export const COFFEE_STAGES = ['Cosecha', 'Despulpado', 'Fermentación', 'Lavado', 'Secado', 'Trilla', 'Tostión', 'Catación'] as const;
 
 export class CreateCoffeeProcessDto {
   @IsUUID()
@@ -38,12 +40,13 @@ export class CreateCoffeeProcessEventDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) waterLiters?: number;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) wastewaterLiters?: number;
   @IsOptional() @IsBoolean() compostReuse?: boolean;
+  @IsOptional() @IsString() wastewaterDestination?: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) durationHours?: number;
   @IsOptional() @IsString() method?: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) brix?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) ph?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) moisturePercent?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) scaScore?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(14) ph?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) moisturePercent?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(100) scaScore?: number;
   @IsOptional() @IsString() notes?: string;
 }
 

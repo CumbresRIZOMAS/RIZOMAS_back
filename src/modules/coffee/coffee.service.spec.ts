@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { CoffeeService } from './coffee.service';
 
 function setup(harvestFarm = 'finca-1') {
-  const proceso = { id: 'p1', farmId: 'finca-1', harvestId: 'h1', startedAt: new Date('2026-06-16'), products: [] };
+  const proceso = { id: 'p1', farmId: 'finca-1', harvestId: 'h1', startedAt: new Date('2026-06-16'), events: [], products: [] };
   const prisma = {
     harvest: { findUnique: jest.fn(async () => ({ labor: { farmId: harvestFarm } })) },
     coffeeProcess: {
@@ -10,8 +10,13 @@ function setup(harvestFarm = 'finca-1') {
       findUnique: jest.fn(async () => proceso),
       update: jest.fn(async ({ data }: { data: object }) => ({ ...proceso, ...data })),
     },
+    coffeeProcessEvent: {
+      create: jest.fn(async ({ data }: { data: object }) => ({ id: 'event-1', ...data })),
+    },
+    $transaction: jest.fn(),
     productFinal: { create: jest.fn(async ({ data }: { data: object }) => ({ id: 'pf1', ...data })) },
   };
+  prisma.$transaction.mockImplementation(async (callback: (tx: typeof prisma) => unknown) => callback(prisma));
   const audit = { record: jest.fn() };
   const user = { sub: 'a', appUserId: 'u1' } as never;
   const access = { assertAccess: jest.fn(async () => undefined) };
@@ -39,5 +44,39 @@ describe('procesos de café', () => {
     const { service, prisma, user } = setup();
     await service.addProduct('p1', { destination: 'Tostado 340 g' }, user);
     expect(prisma.productFinal.create).toHaveBeenCalledWith(expect.objectContaining({ data: { destination: 'Tostado 340 g', coffeeProcessId: 'p1', harvestId: 'h1' } }));
+  });
+
+  it('registra el lavado con destino ambiental del agua residual', async () => {
+    const { service, prisma, user } = setup();
+    prisma.coffeeProcess.findUnique.mockResolvedValue({
+      id: 'p1',
+      farmId: 'finca-1',
+      harvestId: 'h1',
+      startedAt: new Date('2026-06-16'),
+      events: [],
+      products: [],
+    });
+    await service.addEvent('p1', {
+      stage: 'Lavado',
+      recordedAt: new Date('2026-06-18'),
+      inputKg: 100,
+      outputKg: 85,
+      waterLiters: 300,
+      wastewaterLiters: 280,
+      compostReuse: true,
+      wastewaterDestination: 'Compostaje',
+    }, user);
+    expect(prisma.coffeeProcessEvent.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ wastewaterDestination: 'Compostaje', wastewaterLiters: 280 }),
+    }));
+  });
+
+  it('rechaza reutilizar agua residual sin litros y destino', async () => {
+    const { service, user } = setup();
+    await expect(service.addEvent('p1', {
+      stage: 'Lavado',
+      recordedAt: new Date('2026-06-18'),
+      compostReuse: true,
+    }, user)).rejects.toThrow(BadRequestException);
   });
 });

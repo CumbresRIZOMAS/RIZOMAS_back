@@ -454,6 +454,7 @@ model CoffeeProcessEvent {
   waterLiters        Decimal?      @db.Decimal(12, 2)
   wastewaterLiters   Decimal?      @db.Decimal(12, 2)
   compostReuse       Boolean       @default(false)
+  wastewaterDestination String?
   durationHours      Decimal?      @db.Decimal(8, 2)
   method             String?
   brix               Decimal?      @db.Decimal(6, 2)

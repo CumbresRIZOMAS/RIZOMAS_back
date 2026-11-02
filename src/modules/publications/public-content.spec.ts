@@ -69,7 +69,7 @@ describe('read model de trazabilidad pública', () => {
 
   it('cuenta las prácticas del lote y de sus cultivos', () => {
     const resultado = toPublicTraceability(row as never);
-    expect(resultado.practices).toEqual({ laborsByType: { MANEJO_AGRONOMICO: 2, COSECHA: 1 }, soilAnalyses: 2, bioinputApplications: 3 });
+    expect(resultado.practices).toEqual({ laborsByType: { MANEJO_AGRONOMICO: 2, COSECHA: 1 }, soilAnalyses: 2, bioinputApplications: 3, recommendations: 0 });
     expect(resultado.crop).toEqual({ species: 'Café', variety: 'Castillo' });
     expect(resultado.processes[0].stage).toBe('Secado');
   });

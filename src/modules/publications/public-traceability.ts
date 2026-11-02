@@ -124,7 +124,7 @@ export function toPublicTraceability(row: Row): PublicTraceability {
       laborsByType,
       soilAnalyses: lot?._count.soilAnalyses ?? 0,
       bioinputApplications: lot?._count.bioinputApplications ?? 0,
-      recommendations: lot?.soilAnalyses.reduce((total, analysis) => total + analysis.recommendations.length, 0) ?? 0,
+      recommendations: lot?.soilAnalyses?.reduce((total, analysis) => total + analysis.recommendations.length, 0) ?? 0,
     },
     // La app móvil puede asociar el proceso al lote sin enlazarlo a una
     // cosecha. La proyección por finca permite mostrar ambos casos.
