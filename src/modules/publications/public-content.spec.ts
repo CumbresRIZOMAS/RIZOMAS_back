@@ -31,6 +31,34 @@ describe('contenido público sin datos privados', () => {
       expect(call.select.evidences).not.toHaveProperty('include');
     }
   });
+
+  it('incluye fincas con municipio o departamento aunque aún no tengan una publicación activa', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const farms = jest.fn().mockResolvedValue([{ id: 'f1', name: 'El Rosal', municipality: 'Pitalito', region: 'Huila' }]);
+    const service = new PublicationsService({ publication: { findMany }, farm: { findMany: farms } } as never, {} as never, {} as never, {} as never);
+
+    const origins = await service.findPublishedOrigins();
+
+    expect(farms).toHaveBeenCalledWith(expect.objectContaining({
+      where: { OR: [{ municipality: { not: null } }, { region: { not: null } }] },
+      select: { id: true, name: true, municipality: true, region: true },
+    }));
+    expect(origins).toEqual([expect.objectContaining({ id: 'farm:f1', farmName: 'El Rosal', title: 'El Rosal', municipality: 'Pitalito', region: 'Huila', isPublished: false })]);
+    expect(JSON.stringify(origins)).not.toContain('exactLocation');
+  });
+
+  it('prioriza la publicación vigente y devuelve solo una entrada por finca', async () => {
+    const publication = (id: string) => ({ id, farmId: 'f1', farm: { name: 'El Rosal', municipality: 'Pitalito', region: 'Huila' }, title: `Café ${id}`, description: null, region: null, quantity: null, unit: null, publicLocation: null, publishedAt: new Date(), evidences: [] });
+    const findMany = jest.fn().mockResolvedValue([publication('p2'), publication('p1')]);
+    const farms = jest.fn().mockResolvedValue([{ id: 'f1', name: 'El Rosal', municipality: 'Pitalito', region: 'Huila' }, { id: 'f2', name: 'La Esperanza', municipality: null, region: 'Cauca' }]);
+    const service = new PublicationsService({ publication: { findMany }, farm: { findMany: farms } } as never, {} as never, {} as never, {} as never);
+
+    const origins = await service.findPublishedOrigins();
+
+    expect(origins).toHaveLength(2);
+    expect(origins[0]).toMatchObject({ id: 'p2', farmName: 'El Rosal', isPublished: true });
+    expect(origins[1]).toMatchObject({ id: 'farm:f2', isPublished: false });
+  });
 });
 
 describe('read model de trazabilidad pública', () => {

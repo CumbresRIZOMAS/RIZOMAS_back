@@ -185,6 +185,7 @@ export class PublicationsService {
       .map((farm) => ({
         id: `farm:${farm.id}`,
         title: farm.name,
+        farmName: farm.name,
         description: null,
         municipality: farm.municipality,
         region: farm.region,
