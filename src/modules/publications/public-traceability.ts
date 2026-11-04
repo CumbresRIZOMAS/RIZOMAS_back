@@ -15,9 +15,24 @@ export type PublicTraceability = {
     stage: string;
     startedAt: Date;
     finishedAt: Date | null;
-    events: { stage: string; recordedAt: Date; inputKg: string | null; outputKg: string | null }[];
+    events: PublicProcessEvent[];
     products: { finalizedAt: Date | null; destination: string | null; certifications: { certifier: string; status: string }[] }[];
   }[];
+};
+
+/** Datos medibles de una etapa. Las notas libres nunca se publican: solo las notas de sabor de la lista fija. */
+export type PublicProcessEvent = {
+  stage: string;
+  recordedAt: Date;
+  inputKg: string | null;
+  outputKg: string | null;
+  method: string | null;
+  durationHours: string | null;
+  moisturePercent: string | null;
+  brix: string | null;
+  ph: string | null;
+  scaScore: string | null;
+  flavorNotes: string[];
 };
 
 export type PublicFarmTraceability = {
@@ -38,7 +53,19 @@ export const publicCoffeeProcessSelect = {
   finishedAt: true,
   events: {
     orderBy: { recordedAt: 'asc' as const },
-    select: { stage: true, recordedAt: true, inputKg: true, outputKg: true },
+    select: {
+      stage: true,
+      recordedAt: true,
+      inputKg: true,
+      outputKg: true,
+      method: true,
+      durationHours: true,
+      moisturePercent: true,
+      brix: true,
+      ph: true,
+      scaScore: true,
+      notes: true,
+    },
   },
   products: {
     select: {
@@ -98,6 +125,37 @@ export const publicationForTraceability = {
 
 type Row = Prisma.PublicationGetPayload<typeof publicationForTraceability>;
 
+/** Notas de sabor que ofrecen la app y la web al registrar la catación. */
+export const FLAVOR_NOTES = ['Chocolate', 'Panela', 'Caramelo', 'Frutal', 'Floral', 'Cítrico', 'Nuez', 'Especiado'];
+
+/** Extrae de las notas solo las de sabor que están en la lista fija; el resto del texto es privado. */
+export function publicFlavorNotes(notes: string | null | undefined): string[] {
+  const match = notes?.match(/Notas de sabor:\s*([^.]*)\./i);
+  if (!match) return [];
+  const elegidas = match[1].split(',').map((n) => n.trim().toLowerCase());
+  return FLAVOR_NOTES.filter((n) => elegidas.includes(n.toLowerCase()));
+}
+
+type EventRow = Prisma.CoffeeProcessEventGetPayload<{ select: typeof publicCoffeeProcessSelect.events.select }>;
+
+const decimal = (value: Prisma.Decimal | null) => value?.toString() ?? null;
+
+export function toPublicEvent(event: EventRow): PublicProcessEvent {
+  return {
+    stage: event.stage,
+    recordedAt: event.recordedAt,
+    inputKg: decimal(event.inputKg),
+    outputKg: decimal(event.outputKg),
+    method: event.method?.trim().slice(0, 80) || null,
+    durationHours: decimal(event.durationHours),
+    moisturePercent: decimal(event.moisturePercent),
+    brix: decimal(event.brix),
+    ph: decimal(event.ph),
+    scaScore: decimal(event.scaScore),
+    flavorNotes: publicFlavorNotes(event.notes),
+  };
+}
+
 export function toPublicTraceability(row: Row): PublicTraceability {
   const harvest = row.harvest;
   const lot = harvest?.crop?.lot;
@@ -132,12 +190,7 @@ export function toPublicTraceability(row: Row): PublicTraceability {
       stage: p.currentStage,
       startedAt: p.startedAt,
       finishedAt: p.finishedAt,
-      events: (p.events ?? []).map((event) => ({
-        stage: event.stage,
-        recordedAt: event.recordedAt,
-        inputKg: event.inputKg?.toString() ?? null,
-        outputKg: event.outputKg?.toString() ?? null,
-      })),
+      events: (p.events ?? []).map(toPublicEvent),
       products: p.products,
     })),
   };
@@ -177,12 +230,7 @@ export function toPublicFarmTraceability(row: {
       stage: p.currentStage,
       startedAt: p.startedAt,
       finishedAt: p.finishedAt,
-      events: p.events.map((event) => ({
-        stage: event.stage,
-        recordedAt: event.recordedAt,
-        inputKg: event.inputKg?.toString() ?? null,
-        outputKg: event.outputKg?.toString() ?? null,
-      })),
+      events: p.events.map(toPublicEvent),
       products: p.products,
     })),
   };

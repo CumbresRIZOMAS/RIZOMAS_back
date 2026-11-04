@@ -2,7 +2,7 @@ import { EvidenceService } from '../evidence/evidence.service';
 import { PUBLIC_EVIDENCE_SELECT } from '../evidence/public-evidence';
 import { PublicationsService } from './publications.service';
 import { publicFarmName } from './public-farm-name';
-import { publicationForTraceability, toPublicTraceability } from './public-traceability';
+import { publicationForTraceability, publicFlavorNotes, toPublicEvent, toPublicTraceability } from './public-traceability';
 
 /** Campos que nunca pueden salir en endpoints públicos (ASR-15). */
 const PRIVADOS = ['geolocation', 'objectKey', 'moderation', 'reviewedById', 'farmId', 'lotId', 'laborId'];
@@ -36,13 +36,13 @@ describe('contenido público sin datos privados', () => {
   it('incluye fincas con municipio o departamento aunque aún no tengan una publicación activa', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const farms = jest.fn().mockResolvedValue([{ id: 'f1', name: 'El Rosal', municipality: 'Pitalito', region: 'Huila' }]);
-    const service = new PublicationsService({ publication: { findMany }, farm: { findMany: farms } } as never, {} as never, {} as never, {} as never);
+    const service = new PublicationsService({ publication: { findMany }, farm: { findMany: farms }, evidence: { findMany: jest.fn().mockResolvedValue([]) } } as never, {} as never, {} as never, {} as never);
 
     const origins = await service.findPublishedOrigins();
 
     expect(farms).toHaveBeenCalledWith(expect.objectContaining({
       where: { OR: [{ municipality: { not: null } }, { region: { not: null } }] },
-      select: { id: true, name: true, municipality: true, region: true, farmType: true },
+      select: expect.objectContaining({ id: true, name: true, municipality: true, region: true, farmType: true }),
     }));
     expect(origins).toEqual([expect.objectContaining({ id: 'farm:f1', farmName: 'El Rosal', title: 'El Rosal', municipality: 'Pitalito', region: 'Huila', isPublished: false })]);
     expect(JSON.stringify(origins)).not.toContain('exactLocation');
@@ -52,7 +52,7 @@ describe('contenido público sin datos privados', () => {
     const publication = (id: string) => ({ id, farmId: 'f1', farm: { name: 'El Rosal', municipality: 'Pitalito', region: 'Huila' }, title: `Café ${id}`, description: null, region: null, quantity: null, unit: null, publicLocation: null, publishedAt: new Date(), evidences: [] });
     const findMany = jest.fn().mockResolvedValue([publication('p2'), publication('p1')]);
     const farms = jest.fn().mockResolvedValue([{ id: 'f1', name: 'El Rosal', municipality: 'Pitalito', region: 'Huila' }, { id: 'f2', name: 'La Esperanza', municipality: null, region: 'Cauca' }]);
-    const service = new PublicationsService({ publication: { findMany }, farm: { findMany: farms } } as never, {} as never, {} as never, {} as never);
+    const service = new PublicationsService({ publication: { findMany }, farm: { findMany: farms }, evidence: { findMany: jest.fn().mockResolvedValue([]) } } as never, {} as never, {} as never, {} as never);
 
     const origins = await service.findPublishedOrigins();
 
@@ -78,7 +78,7 @@ describe('nombre público de la finca', () => {
     const publication = { id: 'p1', farmId: 'f1', farm: { name: 'ANA PEREZ - EL ROSAL', municipality: 'Pitalito', region: 'Huila' }, title: 'Café', description: null, region: null, quantity: null, unit: null, publicLocation: null, publishedAt: new Date(), evidences: [] };
     const findMany = jest.fn().mockResolvedValue([publication]);
     const farms = jest.fn().mockResolvedValue([{ id: 'f2', name: 'JUAN GOMEZ - LA ESPERANZA', municipality: 'Pitalito', region: 'Huila' }]);
-    const service = new PublicationsService({ publication: { findMany }, farm: { findMany: farms } } as never, {} as never, {} as never, {} as never);
+    const service = new PublicationsService({ publication: { findMany }, farm: { findMany: farms }, evidence: { findMany: jest.fn().mockResolvedValue([]) } } as never, {} as never, {} as never, {} as never);
 
     const origins = await service.findPublishedOrigins();
 
@@ -126,5 +126,33 @@ describe('read model de trazabilidad pública', () => {
     expect(resultado.practices).toEqual({ laborsByType: { MANEJO_AGRONOMICO: 2, COSECHA: 1 }, soilAnalyses: 2, bioinputApplications: 3, recommendations: 0 });
     expect(resultado.crop).toEqual({ species: 'Café', variety: 'Castillo' });
     expect(resultado.processes[0].stage).toBe('Secado');
+  });
+});
+
+describe('datos públicos de la catación', () => {
+  const dec = (v: string) => ({ toString: () => v });
+
+  it('publica puntaje, método y notas de sabor de la lista fija', () => {
+    const evento = toPublicEvent({
+      stage: 'Catación',
+      recordedAt: new Date('2026-11-04'),
+      inputKg: null,
+      outputKg: null,
+      method: 'Honey rojo · Marquesina',
+      durationHours: null,
+      moisturePercent: dec('11.5'),
+      brix: null,
+      ph: null,
+      scaScore: dec('90.25'),
+      notes: 'Notas de sabor: Chocolate, Frutal, Floral. Lo cató Juan Pérez, cel 3001234567',
+    } as never);
+    expect(evento).toMatchObject({ method: 'Honey rojo · Marquesina', scaScore: '90.25', moisturePercent: '11.5', flavorNotes: ['Chocolate', 'Frutal', 'Floral'] });
+  });
+
+  it('nunca publica las notas libres', () => {
+    const evento = toPublicEvent({ stage: 'Secado', recordedAt: new Date(), notes: 'Lo cató Juan Pérez, cel 3001234567' } as never);
+    expect(JSON.stringify(evento)).not.toMatch(/Juan|300123/);
+    expect(publicFlavorNotes('Notas de sabor: Chocolate, Mi vecino Pedro.')).toEqual(['Chocolate']);
+    expect(publicFlavorNotes(null)).toEqual([]);
   });
 });
