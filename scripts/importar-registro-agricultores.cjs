@@ -1,12 +1,12 @@
-/* Sincroniza User desde Excel, finca desde KML/Excel y lote desde P/Q/R. */
+/* Sincroniza perfiles y fincas desde REGISTROS SOFTWARE.xlsx. */
 const fs = require('node:fs');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const [, , inputPath] = process.argv;
 const summary = {
-  profiles: 0, farmsCreated: 0, farmsUpdated: 0, lotsCreated: 0, lotsUpdated: 0,
-  farmMemberships: 0, lotMemberships: 0, pendingFarm: 0, pendingLot: 0,
-  conflictingFarmGroups: 0, conflictingLotCoordinates: 0, ambiguousFarmNames: 0,
+  profiles: 0, farmsCreated: 0, farmsUpdated: 0,
+  farmMemberships: 0, pendingFarm: 0,
+  conflictingFarmGroups: 0, ambiguousFarmNames: 0,
   profileFieldsUpdated: 0, conflictingEmails: 0,
 };
 
@@ -18,9 +18,17 @@ function farmName(value) {
   return String(value ?? '').trim();
 }
 function farmNameKey(value) { return normalize(farmName(value)); }
+function farmKey(row) {
+  const hasFarmCoordinates = row.farmLatitude != null || row.farmLongitude != null;
+  const coordinate = coordinateKey(row, hasFarmCoordinates ? 'farm' : '');
+  return [farmNameKey(row.farmName), coordinate ?? '', normalize(row.region), normalize(row.municipality)].join('|');
+}
 function coordinateKey(row, prefix = '') {
-  const latitude = prefix ? row.farmLatitude : row.latitude;
-  const longitude = prefix ? row.farmLongitude : row.longitude;
+  const rawLatitude = prefix ? row.farmLatitude : row.latitude;
+  const rawLongitude = prefix ? row.farmLongitude : row.longitude;
+  if (rawLatitude == null || rawLongitude == null) return null;
+  const latitude = Number(rawLatitude);
+  const longitude = Number(rawLongitude);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   return `${latitude.toFixed(7)},${longitude.toFixed(7)}`;
 }
@@ -44,20 +52,22 @@ async function main() {
   const rows = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
   const farmGroups = new Map();
   for (const row of rows) {
-    const key = farmNameKey(row.farmName);
-    if (!key) continue;
+    const key = farmKey(row);
+    if (!farmNameKey(row.farmName)) continue;
     farmGroups.set(key, [...(farmGroups.get(key) ?? []), row]);
   }
 
-  const existingFarms = await prisma.farm.findMany({ select: { id: true, name: true } });
+  const existingFarms = await prisma.farm.findMany({ select: {
+    id: true, name: true, region: true, municipality: true, latitude: true, longitude: true,
+  } });
   const farmsByName = new Map();
   for (const farm of existingFarms) {
-    const key = farmNameKey(farm.name);
+    const key = farmKey(farm);
     farmsByName.set(key, [...(farmsByName.get(key) ?? []), farm.id]);
   }
 
   await prisma.$transaction(async (tx) => {
-    const farmIdByName = new Map();
+    const farmIdByKey = new Map();
     for (const [key, group] of farmGroups) {
       const representative = group[0];
       const locations = new Set(group.map((row) => [row.region, row.municipality, row.village].map(normalize).join('|')));
@@ -66,11 +76,11 @@ async function main() {
         const coordinate = coordinateKey(row, 'farm');
         if (coordinate) farmCoordinates.set(coordinate, row);
       }
-      if (locations.size !== 1 || farmCoordinates.size !== 1) {
+      if (locations.size !== 1 || farmCoordinates.size > 1) {
         summary.conflictingFarmGroups += 1;
         continue;
       }
-      const coordinateRow = [...farmCoordinates.values()][0];
+      const coordinateRow = farmCoordinates.size === 1 ? [...farmCoordinates.values()][0] : null;
       const candidates = farmsByName.get(key) ?? [];
       if (candidates.length > 1) {
         summary.ambiguousFarmNames += 1;
@@ -81,8 +91,8 @@ async function main() {
         region: representative.region || null,
         municipality: representative.municipality || null,
         village: representative.village || null,
-        latitude: coordinateRow.farmLatitude,
-        longitude: coordinateRow.farmLongitude,
+        latitude: coordinateRow?.farmLatitude ?? null,
+        longitude: coordinateRow?.farmLongitude ?? null,
       };
       let farmId = candidates[0] ?? null;
       if (!farmId) {
@@ -94,52 +104,7 @@ async function main() {
         await tx.farm.update({ where: { id: farmId }, data });
         summary.farmsUpdated += 1;
       }
-      farmIdByName.set(key, farmId);
-    }
-
-    const existingLots = await tx.lot.findMany({ select: { id: true, farmId: true, name: true } });
-    const lotsByKey = new Map();
-    for (const lot of existingLots) {
-      const key = `${lot.farmId}|${normalize(lot.name)}`;
-      lotsByKey.set(key, [...(lotsByKey.get(key) ?? []), lot.id]);
-    }
-    const lotIdByKey = new Map();
-    const lotGroups = new Map();
-    for (const row of rows) {
-      const farmId = farmIdByName.get(farmNameKey(row.farmName));
-      const lotName = String(row.propertyName ?? '').trim();
-      if (!farmId || !lotName) continue;
-      const key = `${farmId}|${normalize(lotName)}`;
-      lotGroups.set(key, [...(lotGroups.get(key) ?? []), { ...row, farmId, lotName }]);
-    }
-    for (const [key, group] of lotGroups) {
-      const candidates = lotsByKey.get(key) ?? [];
-      if (candidates.length > 1) continue;
-      const coordinates = new Map();
-      for (const row of group) {
-        const coordinate = coordinateKey(row);
-        if (coordinate) coordinates.set(coordinate, row);
-      }
-      if (coordinates.size > 1) summary.conflictingLotCoordinates += 1;
-      const selectedCoordinate = coordinates.size === 1 ? [...coordinates.values()][0] : null;
-      const representative = group[0];
-      const data = selectedCoordinate
-        ? { latitude: selectedCoordinate.latitude, longitude: selectedCoordinate.longitude }
-        : {};
-      let lotId = candidates[0] ?? null;
-      if (!lotId) {
-        const created = await tx.lot.create({
-          data: { farmId: representative.farmId, name: representative.lotName, ...data },
-          select: { id: true },
-        });
-        lotId = created.id;
-        lotsByKey.set(key, [lotId]);
-        summary.lotsCreated += 1;
-      } else {
-        if (Object.keys(data).length) await tx.lot.update({ where: { id: lotId }, data });
-        summary.lotsUpdated += 1;
-      }
-      lotIdByKey.set(key, lotId);
+      farmIdByKey.set(key, farmId);
     }
 
     for (const row of rows) {
@@ -175,7 +140,7 @@ async function main() {
         await tx.user.update({ where: { id: profile.id }, data: profileData });
         summary.profileFieldsUpdated += 1;
       }
-      const farmId = farmIdByName.get(farmNameKey(row.farmName));
+      const farmId = farmIdByKey.get(farmKey(row));
       if (!farmId) { summary.pendingFarm += 1; continue; }
       await tx.farmUser.upsert({
         where: { farmId_userId: { farmId, userId: profile.id } },
@@ -183,16 +148,6 @@ async function main() {
         update: { role: 'AGRICULTOR' },
       });
       summary.farmMemberships += 1;
-      const lotName = String(row.propertyName ?? '').trim();
-      if (!lotName) { summary.pendingLot += 1; continue; }
-      const lotId = lotIdByKey.get(`${farmId}|${normalize(lotName)}`);
-      if (!lotId) { summary.pendingLot += 1; continue; }
-      await tx.lotUser.upsert({
-        where: { lotId_userId: { lotId, userId: profile.id } },
-        create: { lotId, userId: profile.id },
-        update: {},
-      });
-      summary.lotMemberships += 1;
     }
   }, { maxWait: 15000, timeout: 120000 });
 

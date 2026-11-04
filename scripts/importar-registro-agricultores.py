@@ -70,7 +70,7 @@ def read_kml_farms():
 
 def read_rows():
     # Excel: I/J/K -> finca.region/municipality/village (vereda);
-    # P -> lote.name and Q/R -> lote.latitude/longitude.
+    # P -> finca.name and Q/R -> finca.latitude/longitude.
     with zipfile.ZipFile(BOOK) as book:
         shared = []
         if 'xl/sharedStrings.xml' in book.namelist():
@@ -78,7 +78,6 @@ def read_rows():
             shared = [''.join(t.text or '' for t in si.findall('.//m:t', NS)) for si in root.findall('m:si', NS)]
         sheet = ET.fromstring(book.read('xl/worksheets/sheet1.xml'))
         result = []
-        kml_farms = read_kml_farms()
         for xmlrow in sheet.findall('.//m:sheetData/m:row', NS)[2:]:
             values = {}
             for cell in xmlrow.findall('m:c', NS):
@@ -96,15 +95,6 @@ def read_rows():
             longitude = decimal_dms(values.get('R'), 'E', 'O')
             if longitude is None:
                 longitude = decimal_dms(values.get('R'), 'E', 'W')
-            matched_farm = None
-            if latitude is not None and longitude is not None and kml_farms:
-                distances = sorted(
-                    [(haversine_meters((latitude, longitude), (farm['latitude'], farm['longitude'])), farm) for farm in kml_farms],
-                    key=lambda item: item[0],
-                )
-                # Solo vincula si hay una coincidencia cercana y claramente única.
-                if distances[0][0] <= 30 and (len(distances) == 1 or distances[1][0] - distances[0][0] >= 0.5):
-                    matched_farm = distances[0][1]
             result.append({
                 'rowNumber': int(xmlrow.attrib['r']), 'name': name,
                 'associationCode': values.get('B', ''), 'associationName': values.get('C', ''),
@@ -113,11 +103,10 @@ def read_rows():
                 'municipality': values.get('J', ''), 'village': values.get('K', ''),
                 'sex': values.get('L', ''), 'age': values.get('M', ''),
                 'specialGroup': values.get('N', ''), 'educationLevel': values.get('O', ''),
-                'propertyName': values.get('P', ''),
+                'farmName': values.get('P', '').strip(),
                 'latitude': latitude, 'longitude': longitude,
-                'farmName': matched_farm['name'] if matched_farm else None,
-                'farmLatitude': matched_farm['latitude'] if matched_farm else None,
-                'farmLongitude': matched_farm['longitude'] if matched_farm else None,
+                'farmLatitude': latitude,
+                'farmLongitude': longitude,
             })
         return result
 
