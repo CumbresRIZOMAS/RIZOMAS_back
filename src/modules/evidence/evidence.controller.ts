@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { EvidenceStatus } from '@prisma/client';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -35,6 +35,17 @@ export class EvidenceController {
   @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
   create(@Body() dto: CreateEvidenceDto, @CurrentUser() user: RequestUser) {
     return this.evidence.create(dto, user);
+  }
+
+  @Get('farms/:farmId/public-profile-candidates')
+  @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA)
+  async publicProfileCandidates(@Param('farmId', ParseUUIDPipe) farmId: string, @CurrentUser() user: RequestUser) {
+    const candidates = await this.evidence.publicProfileCandidates(farmId, user);
+    return Promise.all(candidates.map(async (candidate) => ({
+      id: candidate.id,
+      capturedAt: candidate.capturedAt,
+      ...(await this.storage.createDownloadUrl(candidate.objectKey)),
+    })));
   }
 
   /** Bandeja de revisión. ?status=EN_REVISION,CUARENTENA filtra; sin filtro trae todo lo que espera decisión. */

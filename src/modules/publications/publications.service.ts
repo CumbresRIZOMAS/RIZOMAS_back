@@ -146,7 +146,12 @@ export class PublicationsService {
         select: {
           id: true,
           farmId: true,
-          farm: { select: { name: true, municipality: true, region: true, farmType: true } },
+          farm: { select: {
+            name: true, municipality: true, region: true, farmType: true,
+            publicDescription: true, publicContactEmail: true, publicContactPhone: true,
+            publicWebsite: true, publicInstagram: true, publicFacebook: true, publicWhatsapp: true,
+            publicImageIds: true,
+          } },
           title: true,
           description: true,
           region: true,
@@ -165,9 +170,39 @@ export class PublicationsService {
       this.prisma.farm.findMany({
         where: { OR: [{ municipality: { not: null } }, { region: { not: null } }] },
         orderBy: [{ region: 'asc' }, { municipality: 'asc' }, { name: 'asc' }],
-        select: { id: true, name: true, municipality: true, region: true, farmType: true },
+        select: {
+          id: true, name: true, municipality: true, region: true, farmType: true,
+          publicDescription: true, publicContactEmail: true, publicContactPhone: true,
+          publicWebsite: true, publicInstagram: true, publicFacebook: true, publicWhatsapp: true,
+          publicImageIds: true,
+        },
       }),
     ]);
+
+    const farmIds = [...new Set(farms.map((farm) => farm.id))];
+    const imageIds = [...new Set(farms.flatMap((farm) => farm.publicImageIds))];
+    const profileEvidence = imageIds.length ? await this.prisma.evidence.findMany({
+      where: { id: { in: imageIds }, farmId: { in: farmIds }, ...PUBLISHABLE },
+      select: { id: true, farmId: true, objectKey: true, capturedAt: true },
+    }) : [];
+    const profileImagesByFarm = new Map<string, { id: string; url: string; capturedAt: Date | null }[]>();
+    for (const evidence of profileEvidence) {
+      if (!evidence.farmId) continue;
+      const signed = await this.storage.createDownloadUrl(evidence.objectKey);
+      profileImagesByFarm.set(evidence.farmId, [...(profileImagesByFarm.get(evidence.farmId) ?? []), {
+        id: evidence.id, url: signed.url, capturedAt: evidence.capturedAt,
+      }]);
+    }
+    const farmProfile = (farmId: string, farm: (typeof farms)[number] | (typeof publications)[number]['farm']) => ({
+      description: farm.publicDescription,
+      contactEmail: farm.publicContactEmail,
+      contactPhone: farm.publicContactPhone,
+      website: farm.publicWebsite,
+      instagram: farm.publicInstagram,
+      facebook: farm.publicFacebook,
+      whatsapp: farm.publicWhatsapp,
+      images: profileImagesByFarm.get(farmId) ?? [],
+    });
 
     const farmsWithPublication = new Set(publications.map((publication) => publication.farmId));
     const representedFarms = new Set<string>();
@@ -180,6 +215,7 @@ export class PublicationsService {
         municipality: farm.municipality,
         region: publication.region ?? farm.region,
         farmType: farm.farmType,
+        farmProfile: farmProfile(farmId, farm),
         coffeeTypes: [...new Set(publications
           .filter((candidate) => candidate.farmId === farmId)
           .map((candidate) => candidate.harvest?.crop)
@@ -205,6 +241,7 @@ export class PublicationsService {
         evidences: [],
         farmType: farm.farmType,
         coffeeTypes: [],
+        farmProfile: farmProfile(farm.id, farm),
         isPublished: false,
       }));
 

@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/commo
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
-import { CreateUserDto, UpdateUserDto, UpdateUserStatusDto } from './dto/create-user.dto';
+import { CreateUserDto, SetUserPasswordDto, UpdateUserDto, UpdateUserStatusDto } from './dto/create-user.dto';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -38,6 +38,11 @@ export class UsersController {
   @Post(':id/password-reset')
   resetPassword(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     return this.users.resetPassword(id, user);
+  }
+
+  @Patch(':id/password')
+  setPassword(@Param('id') id: string, @Body() dto: SetUserPasswordDto, @CurrentUser() user: RequestUser) {
+    return this.users.setPassword(id, dto.password, user);
   }
 
   @Delete(':id')

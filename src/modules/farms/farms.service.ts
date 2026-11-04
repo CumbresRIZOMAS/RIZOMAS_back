@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateFarmDto, UpdateFarmDto } from './dto/farm.dto';
 import { FarmAccessService } from '../../common/services/farm-access.service';
@@ -9,8 +9,11 @@ export class FarmsService {
   constructor(private readonly prisma: PrismaService, private readonly access: FarmAccessService) {}
 
   create(dto: CreateFarmDto, user: RequestUser) {
+    if (dto.publicImageIds?.length) throw new BadRequestException('Registra primero la finca y luego selecciona sus imágenes públicas');
     const ownerId = user.role === 'ADMIN_CUMBRES' ? dto.ownerId ?? user.appUserId : user.appUserId;
-    return this.prisma.farm.create({ data: { ...dto, ownerId } as never });
+    const data = { ...dto };
+    delete data.publicImageIds;
+    return this.prisma.farm.create({ data: { ...data, ownerId } as never });
   }
 
   findAll(user: RequestUser) {
@@ -25,6 +28,14 @@ export class FarmsService {
     await this.ensureExists(id);
     await this.access.assertAccess(user, id);
     if (user.role !== 'ADMIN_CUMBRES' && dto.ownerId && dto.ownerId !== user.appUserId) delete dto.ownerId;
+    if (dto.publicImageIds) {
+      const ids = [...new Set(dto.publicImageIds)];
+      const approved = ids.length ? await this.prisma.evidence.count({
+        where: { id: { in: ids }, farmId: id, status: 'APROBADA', visibility: 'PUBLICA' },
+      }) : 0;
+      if (approved !== ids.length) throw new BadRequestException('Solo puedes mostrar fotos aprobadas y autorizadas como públicas de esta finca');
+      dto.publicImageIds = ids;
+    }
     return this.prisma.farm.update({ where: { id }, data: dto as never });
   }
 

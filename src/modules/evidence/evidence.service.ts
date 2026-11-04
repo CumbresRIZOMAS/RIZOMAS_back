@@ -51,6 +51,15 @@ export class EvidenceService {
     return this.queue(user, [EvidenceStatus.PENDIENTE]);
   }
 
+  async publicProfileCandidates(farmId: string, user: RequestUser) {
+    await this.access.assertAccess(user, farmId);
+    return this.prisma.evidence.findMany({
+      where: { farmId, status: EvidenceStatus.APROBADA, visibility: 'PUBLICA' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, objectKey: true, capturedAt: true },
+    });
+  }
+
   /**
    * Antes de firmar una URL de descarga: la clave debe ser de una evidencia
    * registrada y de una finca del usuario. Sin esto, cualquier usuario podía

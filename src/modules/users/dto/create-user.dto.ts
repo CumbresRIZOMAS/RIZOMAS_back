@@ -55,3 +55,9 @@ export class UpdateUserStatusDto {
   @IsBoolean()
   active: boolean;
 }
+
+export class SetUserPasswordDto {
+  @IsString()
+  @MinLength(8)
+  password: string;
+}

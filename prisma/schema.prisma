@@ -155,6 +155,14 @@ model Farm {
   exactLocation           Json?
   publicLocation          Json?
   locationVisibility      Visibility               @default(PRIVADA)
+  publicDescription       String?
+  publicContactEmail      String?
+  publicContactPhone      String?
+  publicWebsite           String?
+  publicInstagram         String?
+  publicFacebook          String?
+  publicWhatsapp          String?
+  publicImageIds          String[]                 @default([])
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   owner                   User?                    @relation("FarmOwner", fields: [ownerId], references: [id])

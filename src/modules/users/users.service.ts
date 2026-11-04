@@ -301,6 +301,63 @@ export class UsersService {
     return after;
   }
 
+  async setPassword(id: string, password: string, actor: RequestUser) {
+    const user = await this.assertCanManage(id, actor);
+    const email = user.email?.trim().toLowerCase() || undefined;
+    const phone = user.phone ? normalizePhoneForStorage(user.phone) : undefined;
+    if (!user.authUserId && !email && !phone) {
+      throw new BadRequestException('Registra primero un correo o celular para crear su acceso a Supabase Auth');
+    }
+
+    let authUserId = user.authUserId;
+    if (!authUserId) {
+      authUserId = await this.findExistingAuthUserId(email, phone);
+      if (authUserId) {
+        await this.authRequest(`/admin/users/${authUserId}`, 'PUT', { password });
+      } else {
+        const created = await this.authRequest('/admin/users', 'POST', {
+          ...(email ? { email, email_confirm: true } : {}),
+          ...(phone ? { phone: toSupabasePhone(phone), phone_confirm: true } : {}),
+          password,
+          user_metadata: {
+            full_name: user.name,
+            ...(phone ? { phone: toSupabasePhone(phone) } : {}),
+            ...(user.documentNumber ? { document_number: user.documentNumber } : {}),
+            password_change_required: true,
+          },
+        });
+        authUserId = typeof created.id === 'string' ? created.id : null;
+        if (!authUserId) throw new ServiceUnavailableException('Supabase no devolvió el identificador de la cuenta creada');
+      }
+    } else {
+      await this.authRequest(`/admin/users/${authUserId}`, 'PUT', { password });
+    }
+
+    await this.prisma.user.update({ where: { id }, data: { authUserId, passwordChangeRequired: true } });
+    await this.audit.record({ userId: actor.appUserId ?? actor.sub, entity: 'User', entityId: id, action: 'ADMIN_SET_PASSWORD' });
+    return { updated: true, mustChangePassword: true, accountLinked: !user.authUserId };
+  }
+
+  private async findExistingAuthUserId(email?: string, phone?: string) {
+    if (!email && !phone) return null;
+    const matches = new Set<string>();
+    for (let page = 1; ; page += 1) {
+      const response = await this.authRequest(`/admin/users?page=${page}&per_page=100`, 'GET');
+      const users = Array.isArray(response.users) ? response.users : [];
+      for (const raw of users) {
+        if (!raw || typeof raw !== 'object') continue;
+        const candidate = raw as { id?: unknown; email?: unknown; phone?: unknown };
+        if (typeof candidate.id !== 'string') continue;
+        const emailMatches = email && typeof candidate.email === 'string' && candidate.email.trim().toLowerCase() === email;
+        const phoneMatches = phone && typeof candidate.phone === 'string' && normalizePhoneForStorage(candidate.phone) === phone;
+        if (emailMatches || phoneMatches) matches.add(candidate.id);
+      }
+      if (users.length < 100) break;
+    }
+    if (matches.size > 1) throw new ConflictException('El correo y el celular están vinculados a cuentas distintas de Supabase Auth');
+    return [...matches][0] ?? null;
+  }
+
   async resetPassword(id: string, actor: RequestUser) {
     const user = await this.assertCanManage(id, actor);
     if (!user.authUserId) throw new BadRequestException('Este usuario no tiene una cuenta vinculada en Supabase Auth');
