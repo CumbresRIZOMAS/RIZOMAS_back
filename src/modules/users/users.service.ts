@@ -8,17 +8,9 @@ import { AuditService } from '../../common/services/audit.service';
 import { FarmAccessService } from '../../common/services/farm-access.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
+import { normalizePhoneForStorage, phoneLookupValues, toSupabasePhone } from '../../common/utils/phone';
 
 const ROLES_ADMIN_FINCA = Object.values(AppRole).filter((role) => role !== AppRole.ADMIN_CUMBRES);
-
-function normalizedPhone(value: string) {
-  const input = value.trim();
-  const digits = input.replace(/\D/g, '');
-  if (/^3\d{9}$/.test(digits)) return `+57${digits}`;
-  if (/^57\d{10}$/.test(digits)) return `+${digits}`;
-  if (/^\+[1-9]\d{7,14}$/.test(input)) return input;
-  throw new BadRequestException('Escribe un celular colombiano de 10 dígitos o un número internacional con + y código de país');
-}
 
 @Injectable()
 export class UsersService {
@@ -31,7 +23,7 @@ export class UsersService {
 
   async create(dto: CreateUserDto, actor: RequestUser) {
     const email = dto.email?.trim().toLowerCase() || undefined;
-    const phone = dto.phone?.trim() ? normalizedPhone(dto.phone) : undefined;
+    const phone = dto.phone?.trim() ? normalizePhoneForStorage(dto.phone) : undefined;
     if (!email && !phone) throw new BadRequestException('Escribe un correo o un celular para crear la cuenta');
     this.assertRoleCanBeAssigned(actor, dto.role);
     const farmIds = [...new Set([...(dto.farmIds ?? []), ...(dto.farmId ? [dto.farmId] : [])])];
@@ -48,11 +40,11 @@ export class UsersService {
     }
     const existingEmailUser = email ? await this.prisma.user.findUnique({ where: { email } }) : null;
     if (existingEmailUser?.authUserId) throw new ConflictException('Ya existe un usuario con ese correo');
-    if (phone && await this.prisma.user.findFirst({ where: { phone, authUserId: { not: null } } })) {
+    if (phone && await this.prisma.user.findFirst({ where: { phone: { in: phoneLookupValues(phone) }, authUserId: { not: null } } })) {
       throw new ConflictException('Ya existe una cuenta de acceso con ese celular');
     }
     const phoneProfiles = phone
-      ? await this.prisma.user.findMany({ where: { phone, authUserId: null }, take: 2 })
+      ? await this.prisma.user.findMany({ where: { phone: { in: phoneLookupValues(phone) }, authUserId: null }, take: 2 })
       : [];
     const documentProfiles = dto.documentNumber?.trim()
       ? await this.prisma.user.findMany({ where: { documentNumber: dto.documentNumber.trim(), authUserId: null }, take: 2 })
@@ -67,11 +59,12 @@ export class UsersService {
       dto.password.replace(/\D/g, '') === dto.documentNumber!.replace(/\D/g, '');
 
     const createdAuthUser = await this.authRequest('/admin/users', 'POST', {
-      ...(email ? { email, email_confirm: true } : { phone, phone_confirm: true }),
+      ...(email ? { email, email_confirm: true } : {}),
+      ...(phone ? { phone: toSupabasePhone(phone), phone_confirm: true } : {}),
       password: dto.password,
       user_metadata: {
         full_name: dto.name.trim(),
-        ...(phone ? { phone } : {}),
+          ...(phone ? { phone: toSupabasePhone(phone) } : {}),
         ...(dto.documentNumber ? { document_number: dto.documentNumber.trim() } : {}),
         password_change_required: passwordChangeRequired,
       },
@@ -168,7 +161,7 @@ export class UsersService {
         if (typeof authUser.id !== 'string') continue;
 
         const email = typeof authUser.email === 'string' && authUser.email.trim() ? authUser.email.trim().toLowerCase() : null;
-        const phone = typeof authUser.phone === 'string' && authUser.phone.trim() ? authUser.phone.trim() : null;
+        const phone = typeof authUser.phone === 'string' && authUser.phone.trim() ? normalizePhoneForStorage(authUser.phone) : null;
         if (!email && !phone) continue;
         const localUser = await this.prisma.user.findUnique({ where: { authUserId: authUser.id } }) ??
           (email ? await this.prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } }) : null) ??
@@ -210,7 +203,7 @@ export class UsersService {
   }
 
   private async findUniqueLocalPhone(phone: string) {
-    const matches = await this.prisma.user.findMany({ where: { phone }, take: 2 });
+    const matches = await this.prisma.user.findMany({ where: { phone: { in: phoneLookupValues(phone) } }, take: 2 });
     return matches.length === 1 ? matches[0] : null;
   }
 
@@ -242,18 +235,18 @@ export class UsersService {
       throw new BadRequestException('Este rol debe estar asignado al menos a una finca');
     }
     const email = dto.email?.trim().toLowerCase();
-    const phone = dto.phone?.trim() ? normalizedPhone(dto.phone) : undefined;
+    const phone = dto.phone?.trim() ? normalizePhoneForStorage(dto.phone) : undefined;
     if (email && email !== before.email?.toLowerCase()) {
       const duplicate = await this.prisma.user.findUnique({ where: { email } });
       if (duplicate) throw new ConflictException('Ya existe un usuario con ese correo');
     }
-    if (phone && phone !== before.phone && await this.prisma.user.findFirst({ where: { id: { not: id }, phone, authUserId: { not: null } } })) {
+    if (phone && phone !== normalizePhoneForStorage(before.phone ?? phone) && await this.prisma.user.findFirst({ where: { id: { not: id }, phone: { in: phoneLookupValues(phone) }, authUserId: { not: null } } })) {
       throw new ConflictException('Ya existe una cuenta de acceso con ese celular');
     }
     if (before.authUserId && (email || phone || dto.name)) {
       await this.authRequest(`/admin/users/${before.authUserId}`, 'PUT', {
         ...(email ? { email, email_confirm: true } : {}),
-        ...(phone ? { phone, ...(!email && !before.email ? { phone_confirm: true } : {}) } : {}),
+        ...(phone ? { phone: toSupabasePhone(phone), ...(!email && !before.email ? { phone_confirm: true } : {}) } : {}),
         ...(dto.name ? { user_metadata: { full_name: dto.name.trim() } } : {}),
       });
     }

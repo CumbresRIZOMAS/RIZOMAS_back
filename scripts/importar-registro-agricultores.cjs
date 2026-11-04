@@ -34,8 +34,8 @@ function optionalAge(value) {
 }
 function normalizedPhone(value) {
   const number = digits(value);
-  if (/^3\d{9}$/.test(number)) return `+57${number}`;
-  if (/^573\d{9}$/.test(number)) return `+${number}`;
+  if (/^3\d{9}$/.test(number)) return `57${number}`;
+  if (/^573\d{9}$/.test(number)) return number;
   return undefined;
 }
 

@@ -6,6 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { ALLOW_PASSWORD_SETUP_KEY } from '../decorators/allow-password-setup.decorator';
+import { normalizePhoneForStorage, phoneLookupValues } from '../utils/phone';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -37,7 +38,7 @@ export class AuthGuard implements CanActivate {
         : null;
       if (!localUser && email) localUser = await this.prisma.user.findFirst({ where: { email }, select: userSelect });
       if (!localUser && phone) {
-        const phoneProfiles = await this.prisma.user.findMany({ where: { phone }, take: 2, select: userSelect });
+        const phoneProfiles = await this.prisma.user.findMany({ where: { phone: { in: phoneLookupValues(phone) } }, take: 2, select: userSelect });
         if (phoneProfiles.length > 1) throw new UnauthorizedException('El celular está asociado a varios perfiles; contacta al administrador');
         localUser = phoneProfiles[0] ?? null;
       }
@@ -51,7 +52,7 @@ export class AuthGuard implements CanActivate {
           data: {
             authUserId: payload.sub,
             email: email ?? null,
-            phone: phone ?? null,
+            phone: phone ? normalizePhoneForStorage(phone) : null,
             name,
             role: 'AGRICULTOR',
           },
