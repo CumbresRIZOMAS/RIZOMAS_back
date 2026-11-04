@@ -1,10 +1,11 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { ALLOW_PASSWORD_SETUP_KEY } from '../decorators/allow-password-setup.decorator';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -28,43 +29,59 @@ export class AuthGuard implements CanActivate {
 
     try {
       const payload = await this.verifyToken(token);
-      let localUser = await this.prisma.user.findFirst({
-        where: { OR: [{ authUserId: payload.sub }, ...(payload.email ? [{ email: payload.email }] : [])] },
-        select: { id: true, role: true, active: true, authUserId: true, email: true },
-      });
-      const email = typeof payload.email === 'string' ? payload.email : undefined;
-      if (!localUser && payload.sub && email) {
+      const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : undefined;
+      const phone = typeof payload.phone === 'string' ? payload.phone : undefined;
+      const userSelect = { id: true, role: true, active: true, authUserId: true, email: true, phone: true, passwordChangeRequired: true } as const;
+      let localUser = payload.sub
+        ? await this.prisma.user.findUnique({ where: { authUserId: payload.sub }, select: userSelect })
+        : null;
+      if (!localUser && email) localUser = await this.prisma.user.findFirst({ where: { email }, select: userSelect });
+      if (!localUser && phone) {
+        const phoneProfiles = await this.prisma.user.findMany({ where: { phone }, take: 2, select: userSelect });
+        if (phoneProfiles.length > 1) throw new UnauthorizedException('El celular está asociado a varios perfiles; contacta al administrador');
+        localUser = phoneProfiles[0] ?? null;
+      }
+      if (!localUser && payload.sub && (email || phone)) {
         const metadata = payload.user_metadata as Record<string, unknown> | undefined;
         const name =
           (metadata?.full_name as string | undefined)?.trim() ||
           (metadata?.name as string | undefined)?.trim() ||
-          email.split('@')[0];
+          email?.split('@')[0] || phone!;
         localUser = await this.prisma.user.create({
           data: {
             authUserId: payload.sub,
-            email,
+            email: email ?? null,
+            phone: phone ?? null,
             name,
             role: 'AGRICULTOR',
           },
-          select: { id: true, role: true, active: true, authUserId: true, email: true },
+          select: { id: true, role: true, active: true, authUserId: true, email: true, phone: true, passwordChangeRequired: true },
         });
       } else if (localUser && !localUser.authUserId && payload.sub) {
         localUser = await this.prisma.user.update({
           where: { id: localUser.id },
           data: { authUserId: payload.sub },
-          select: { id: true, role: true, active: true, authUserId: true, email: true },
+          select: { id: true, role: true, active: true, authUserId: true, email: true, phone: true, passwordChangeRequired: true },
         });
       }
       if (localUser && !localUser.active) throw new UnauthorizedException('Usuario inactivo');
       request.user = {
         sub: payload.sub,
         email: payload.email,
+      phone: payload.phone,
         role: localUser?.role ?? payload.user_role ?? payload.app_metadata?.user_role ?? payload.role,
         appUserId: localUser?.id,
       };
+      const passwordSetupAllowed = this.reflector.getAllAndOverride<boolean>(ALLOW_PASSWORD_SETUP_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
+      if (localUser?.passwordChangeRequired && !passwordSetupAllowed) {
+        throw new ForbiddenException('PASSWORD_CHANGE_REQUIRED');
+      }
       return true;
     } catch (error) {
-      if (error instanceof UnauthorizedException) throw error;
+      if (error instanceof UnauthorizedException || error instanceof ForbiddenException) throw error;
       throw new UnauthorizedException('Token invalido o expirado');
     }
   }
@@ -76,6 +93,7 @@ export class AuthGuard implements CanActivate {
       user_role?: string;
       app_metadata?: { user_role?: string };
       user_metadata?: Record<string, unknown>;
+      phone?: string;
       role?: string;
     }
   > {
@@ -93,6 +111,7 @@ export class AuthGuard implements CanActivate {
       user_role?: string;
       app_metadata?: { user_role?: string };
       user_metadata?: Record<string, unknown>;
+      phone?: string;
       role?: string;
     };
   }

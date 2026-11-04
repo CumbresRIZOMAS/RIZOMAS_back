@@ -13,6 +13,15 @@ export class LotsService {
     return this.prisma.lot.create({ data: dto as never });
   }
 
+  async findAll(user: RequestUser) {
+    const farmIds = await this.access.accessibleFarmIds(user);
+    return this.prisma.lot.findMany({
+      where: farmIds === null ? {} : { farmId: { in: farmIds } },
+      include: { farm: { select: { id: true, name: true } } },
+      orderBy: [{ farmId: 'asc' }, { name: 'asc' }],
+    });
+  }
+
   async findByFarm(farmId: string, user: RequestUser) {
     await this.access.assertAccess(user, farmId);
     return this.prisma.lot.findMany({ where: { farmId }, include: { crops: true } });

@@ -1,4 +1,4 @@
-import { IsNumber, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsLatitude, IsLongitude, IsNumber, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateLotDto {
   @IsUUID()
@@ -14,6 +14,16 @@ export class CreateLotDto {
   @IsOptional()
   @IsNumber()
   areaHa?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @IsLatitude()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @IsLongitude()
+  longitude?: number;
 
   @IsOptional()
   @IsObject()

@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import type { User } from '@prisma/client';
 import { AppRole } from '../../common/enums/app-role.enum';
@@ -10,6 +11,15 @@ import { CreateUserDto, UpdateUserDto } from './dto/create-user.dto';
 
 const ROLES_ADMIN_FINCA = Object.values(AppRole).filter((role) => role !== AppRole.ADMIN_CUMBRES);
 
+function normalizedPhone(value: string) {
+  const input = value.trim();
+  const digits = input.replace(/\D/g, '');
+  if (/^3\d{9}$/.test(digits)) return `+57${digits}`;
+  if (/^57\d{10}$/.test(digits)) return `+${digits}`;
+  if (/^\+[1-9]\d{7,14}$/.test(input)) return input;
+  throw new BadRequestException('Escribe un celular colombiano de 10 dígitos o un número internacional con + y código de país');
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -20,20 +30,51 @@ export class UsersService {
   ) {}
 
   async create(dto: CreateUserDto, actor: RequestUser) {
+    const email = dto.email?.trim().toLowerCase() || undefined;
+    const phone = dto.phone?.trim() ? normalizedPhone(dto.phone) : undefined;
+    if (!email && !phone) throw new BadRequestException('Escribe un correo o un celular para crear la cuenta');
     this.assertRoleCanBeAssigned(actor, dto.role);
     const farmIds = [...new Set([...(dto.farmIds ?? []), ...(dto.farmId ? [dto.farmId] : [])])];
+    const lotIds = [...new Set(dto.lotIds ?? [])];
     for (const farmId of farmIds) await this.access.assertAccess(actor, farmId);
+    const selectedLots = lotIds.length ? await this.prisma.lot.findMany({ where: { id: { in: lotIds } }, select: { id: true, farmId: true } }) : [];
+    if (selectedLots.length !== lotIds.length) throw new BadRequestException('Uno o más lotes seleccionados no existen');
+    for (const lot of selectedLots) {
+      await this.access.assertAccess(actor, lot.farmId);
+      if (!farmIds.includes(lot.farmId)) throw new BadRequestException('Cada lote debe pertenecer a una finca asignada al usuario');
+    }
     if ([AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR].includes(dto.role) && farmIds.length === 0) {
       throw new BadRequestException('Selecciona al menos una finca a la que pertenecerá este usuario');
     }
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
-    if (existing) throw new ConflictException('Ya existe un usuario con ese correo');
+    const existingEmailUser = email ? await this.prisma.user.findUnique({ where: { email } }) : null;
+    if (existingEmailUser?.authUserId) throw new ConflictException('Ya existe un usuario con ese correo');
+    if (phone && await this.prisma.user.findFirst({ where: { phone, authUserId: { not: null } } })) {
+      throw new ConflictException('Ya existe una cuenta de acceso con ese celular');
+    }
+    const phoneProfiles = phone
+      ? await this.prisma.user.findMany({ where: { phone, authUserId: null }, take: 2 })
+      : [];
+    const documentProfiles = dto.documentNumber?.trim()
+      ? await this.prisma.user.findMany({ where: { documentNumber: dto.documentNumber.trim(), authUserId: null }, take: 2 })
+      : [];
+    if (phone && !email && phoneProfiles.length > 1 && documentProfiles.length !== 1) {
+      throw new BadRequestException('Este celular aparece en varios registros. Usa el documento de identidad para identificar a la persona.');
+    }
+    const profileToActivate = existingEmailUser ??
+      (phoneProfiles.length === 1 ? phoneProfiles[0] : null) ??
+      (documentProfiles.length === 1 ? documentProfiles[0] : null);
+    const passwordChangeRequired = Boolean(dto.documentNumber?.trim()) &&
+      dto.password.replace(/\D/g, '') === dto.documentNumber!.replace(/\D/g, '');
 
     const createdAuthUser = await this.authRequest('/admin/users', 'POST', {
-      email: dto.email.toLowerCase(),
+      ...(email ? { email, email_confirm: true } : { phone, phone_confirm: true }),
       password: dto.password,
-      email_confirm: true,
-      user_metadata: { full_name: dto.name.trim() },
+      user_metadata: {
+        full_name: dto.name.trim(),
+        ...(phone ? { phone } : {}),
+        ...(dto.documentNumber ? { document_number: dto.documentNumber.trim() } : {}),
+        password_change_required: passwordChangeRequired,
+      },
     });
     const authUserId = typeof createdAuthUser.id === 'string' ? createdAuthUser.id : null;
     if (!authUserId) throw new ServiceUnavailableException('Supabase no devolvió el identificador de la cuenta creada');
@@ -41,10 +82,30 @@ export class UsersService {
     let user: User;
     try {
       user = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.user.create({ data: { authUserId, name: dto.name.trim(), email: dto.email.toLowerCase(), role: dto.role } });
+        const profileData = {
+          authUserId,
+          name: dto.name.trim(),
+          email: email ?? null,
+          phone: phone ?? null,
+          role: dto.role,
+          active: true,
+          passwordChangeRequired,
+          ...(dto.documentNumber?.trim() ? { documentNumber: dto.documentNumber.trim() } : {}),
+          ...(dto.associationCode?.trim() ? { associationCode: dto.associationCode.trim() } : {}),
+          ...(dto.associationName?.trim() ? { associationName: dto.associationName.trim() } : {}),
+          ...(dto.secondLevelGroup?.trim() ? { secondLevelGroup: dto.secondLevelGroup.trim() } : {}),
+          ...(dto.sex?.trim() ? { sex: dto.sex.trim() } : {}),
+          ...(dto.age !== undefined ? { age: dto.age } : {}),
+          ...(dto.specialGroup?.trim() ? { specialGroup: dto.specialGroup.trim() } : {}),
+          ...(dto.educationLevel?.trim() ? { educationLevel: dto.educationLevel.trim() } : {}),
+        };
+        const created = profileToActivate
+          ? await tx.user.update({ where: { id: profileToActivate.id }, data: profileData })
+          : await tx.user.create({ data: profileData });
         if (farmIds.length) {
           await tx.farmUser.createMany({ data: farmIds.map((farmId) => ({ farmId, userId: created.id, role: dto.role })) });
         }
+        if (lotIds.length) await tx.lotUser.createMany({ data: lotIds.map((lotId) => ({ lotId, userId: created.id })) });
         return created;
       });
     } catch (error) {
@@ -81,6 +142,10 @@ export class UsersService {
           select: { role: true, farm: { select: { id: true, name: true } } },
         },
         ownedFarms: { ...farmScope, select: { id: true, name: true } },
+        lotMembers: {
+          ...(farmIds === null ? {} : { where: { lot: { farmId: { in: farmIds } } } }),
+          select: { lot: { select: { id: true, name: true, farmId: true } } },
+        },
       },
     });
   }
@@ -96,14 +161,18 @@ export class UsersService {
         const authUser = rawUser as {
           id?: unknown;
           email?: unknown;
+          phone?: unknown;
           user_metadata?: Record<string, unknown>;
           banned_until?: unknown;
         };
-        if (typeof authUser.id !== 'string' || typeof authUser.email !== 'string' || !authUser.email.trim()) continue;
+        if (typeof authUser.id !== 'string') continue;
 
-        const email = authUser.email.trim().toLowerCase();
+        const email = typeof authUser.email === 'string' && authUser.email.trim() ? authUser.email.trim().toLowerCase() : null;
+        const phone = typeof authUser.phone === 'string' && authUser.phone.trim() ? authUser.phone.trim() : null;
+        if (!email && !phone) continue;
         const localUser = await this.prisma.user.findUnique({ where: { authUserId: authUser.id } }) ??
-          await this.prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
+          (email ? await this.prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } }) : null) ??
+          (phone ? await this.findUniqueLocalPhone(phone) : null);
         if (localUser) {
           if (!localUser.authUserId) {
             await this.prisma.user.update({ where: { id: localUser.id }, data: { authUserId: authUser.id } });
@@ -120,7 +189,8 @@ export class UsersService {
             data: {
               authUserId: authUser.id,
               email,
-              name: metadataName?.trim() ?? email.split('@')[0],
+              phone,
+              name: metadataName?.trim() ?? email?.split('@')[0] ?? phone!,
               // El rol de Auth no se toma de user_metadata: los permisos se
               // asignan desde este panel y nunca desde datos editables por el usuario.
               role: AppRole.AGRICULTOR,
@@ -139,10 +209,16 @@ export class UsersService {
     }
   }
 
+  private async findUniqueLocalPhone(phone: string) {
+    const matches = await this.prisma.user.findMany({ where: { phone }, take: 2 });
+    return matches.length === 1 ? matches[0] : null;
+  }
+
   async update(id: string, dto: UpdateUserDto, actor: RequestUser) {
     const before = await this.assertCanManage(id, actor);
     if (dto.role) this.assertRoleCanBeAssigned(actor, dto.role, before.role as AppRole);
     const farmIds = dto.farmIds === undefined ? undefined : [...new Set(dto.farmIds)];
+    const lotIds = dto.lotIds === undefined ? undefined : [...new Set(dto.lotIds)];
     const actorFarmIds = await this.access.accessibleFarmIds(actor);
     if (farmIds && actorFarmIds !== null) {
       for (const farmId of farmIds) await this.access.assertAccess(actor, farmId);
@@ -151,27 +227,43 @@ export class UsersService {
       ? []
       : before.farmMembers.map((membership) => membership.farmId).filter((farmId) => !actorFarmIds.includes(farmId));
     const resultingFarmIds = farmIds === undefined ? undefined : [...new Set([...farmIds, ...inaccessibleMemberships])];
+    if (lotIds !== undefined) {
+      const selectedLots = lotIds.length ? await this.prisma.lot.findMany({ where: { id: { in: lotIds } }, select: { id: true, farmId: true } }) : [];
+      if (selectedLots.length !== lotIds.length) throw new BadRequestException('Uno o más lotes seleccionados no existen');
+      const currentFarmIds = [...new Set([...before.farmMembers.map((membership) => membership.farmId), ...before.ownedFarms.map((farm) => farm.id)])];
+      const assignedFarmIds = resultingFarmIds ?? currentFarmIds;
+      for (const lot of selectedLots) {
+        await this.access.assertAccess(actor, lot.farmId);
+        if (!assignedFarmIds.includes(lot.farmId)) throw new BadRequestException('Cada lote debe pertenecer a una finca asignada al usuario');
+      }
+    }
     const resultingRole: AppRole = dto.role ?? (before.role as AppRole);
     if (resultingFarmIds && [AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR].includes(resultingRole) && resultingFarmIds.length === 0) {
       throw new BadRequestException('Este rol debe estar asignado al menos a una finca');
     }
-    if (dto.email && dto.email.toLowerCase() !== before.email.toLowerCase()) {
-      const duplicate = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
+    const email = dto.email?.trim().toLowerCase();
+    const phone = dto.phone?.trim() ? normalizedPhone(dto.phone) : undefined;
+    if (email && email !== before.email?.toLowerCase()) {
+      const duplicate = await this.prisma.user.findUnique({ where: { email } });
       if (duplicate) throw new ConflictException('Ya existe un usuario con ese correo');
     }
-    const email = dto.email?.trim().toLowerCase();
-    if (before.authUserId && (email || dto.name)) {
+    if (phone && phone !== before.phone && await this.prisma.user.findFirst({ where: { id: { not: id }, phone, authUserId: { not: null } } })) {
+      throw new ConflictException('Ya existe una cuenta de acceso con ese celular');
+    }
+    if (before.authUserId && (email || phone || dto.name)) {
       await this.authRequest(`/admin/users/${before.authUserId}`, 'PUT', {
         ...(email ? { email, email_confirm: true } : {}),
+        ...(phone ? { phone, ...(!email && !before.email ? { phone_confirm: true } : {}) } : {}),
         ...(dto.name ? { user_metadata: { full_name: dto.name.trim() } } : {}),
       });
     }
     const userData = { ...dto };
     delete userData.farmIds;
+    delete userData.lotIds;
     const after = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.user.update({
         where: { id },
-        data: { ...userData, ...(email ? { email } : {}), ...(dto.name ? { name: dto.name.trim() } : {}) },
+        data: { ...userData, ...(email ? { email } : {}), ...(phone ? { phone } : {}), ...(dto.name ? { name: dto.name.trim() } : {}) },
       });
       if (dto.role) {
         await tx.farmUser.updateMany({
@@ -188,6 +280,16 @@ export class UsersService {
         if (membershipsToCreate.length) {
           await tx.farmUser.createMany({ data: membershipsToCreate.map((farmId) => ({ farmId, userId: id, role: resultingRole })) });
         }
+      }
+      if (lotIds !== undefined) {
+        const scopedFarmIds = actorFarmIds === null ? null : actorFarmIds;
+        await tx.lotUser.deleteMany({
+          where: { userId: id, ...(scopedFarmIds === null ? {} : { lot: { farmId: { in: scopedFarmIds } } }) },
+        });
+        const lotsToCreate = lotIds.length
+          ? await tx.lot.findMany({ where: { id: { in: lotIds }, ...(scopedFarmIds === null ? {} : { farmId: { in: scopedFarmIds } }) }, select: { id: true } })
+          : [];
+        if (lotsToCreate.length) await tx.lotUser.createMany({ data: lotsToCreate.map((lot) => ({ lotId: lot.id, userId: id })) });
       }
       return updated;
     });
@@ -209,6 +311,13 @@ export class UsersService {
   async resetPassword(id: string, actor: RequestUser) {
     const user = await this.assertCanManage(id, actor);
     if (!user.authUserId) throw new BadRequestException('Este usuario no tiene una cuenta vinculada en Supabase Auth');
+    if (!user.email) {
+      const temporaryPassword = `${randomBytes(16).toString('base64url')}Aa1!`;
+      await this.authRequest(`/admin/users/${user.authUserId}`, 'PUT', { password: temporaryPassword });
+      await this.prisma.user.update({ where: { id }, data: { passwordChangeRequired: true } });
+      await this.audit.record({ userId: actor.appUserId ?? actor.sub, entity: 'User', entityId: id, action: 'PASSWORD_RESET' });
+      return { sent: false, temporaryPassword };
+    }
     const anonKey = this.config.get<string>('SUPABASE_ANON_KEY');
     const url = this.config.get<string>('SUPABASE_URL')?.replace(/\/$/, '');
     if (!anonKey || !url) throw new ServiceUnavailableException('Configura SUPABASE_URL y SUPABASE_ANON_KEY en el backend');
@@ -221,6 +330,28 @@ export class UsersService {
     if (!response.ok) throw new BadRequestException(await this.authError(response));
     await this.audit.record({ userId: actor.appUserId ?? actor.sub, entity: 'User', entityId: id, action: 'PASSWORD_RESET_REQUEST' });
     return { sent: true };
+  }
+
+  async passwordStatus(actor: RequestUser) {
+    const user = actor.appUserId
+      ? await this.prisma.user.findUnique({ where: { id: actor.appUserId }, select: { passwordChangeRequired: true } })
+      : await this.prisma.user.findUnique({ where: { authUserId: actor.sub }, select: { passwordChangeRequired: true } });
+    if (!user) throw new NotFoundException('No se encontró el perfil local de la cuenta');
+    return { required: user.passwordChangeRequired };
+  }
+
+  async changeOwnPassword(password: string, actor: RequestUser) {
+    const user = actor.appUserId
+      ? await this.prisma.user.findUnique({ where: { id: actor.appUserId }, select: { id: true, authUserId: true, documentNumber: true } })
+      : await this.prisma.user.findUnique({ where: { authUserId: actor.sub }, select: { id: true, authUserId: true, documentNumber: true } });
+    if (!user?.authUserId) throw new NotFoundException('No se encontró la cuenta en Supabase Auth');
+    const digits = password.replace(/\D/g, '');
+    if (user.documentNumber && digits && digits === user.documentNumber.replace(/\D/g, '')) {
+      throw new BadRequestException('La nueva contraseña debe ser distinta al documento de identidad');
+    }
+    await this.authRequest(`/admin/users/${user.authUserId}`, 'PUT', { password });
+    await this.prisma.user.update({ where: { id: user.id }, data: { passwordChangeRequired: false } });
+    return { updated: true };
   }
 
   async remove(id: string, actor: RequestUser) {
@@ -267,17 +398,21 @@ export class UsersService {
           ...(farmIds === null ? {} : { where: { id: { in: farmIds } } }),
           select: { id: true, name: true },
         },
+        lotMembers: {
+          ...(farmIds === null ? {} : { where: { lot: { farmId: { in: farmIds } } } }),
+          select: { lot: { select: { id: true, name: true, farmId: true } } },
+        },
       },
     });
   }
 
   private async assertCanManage(id: string, actor: RequestUser) {
-    const user = await this.prisma.user.findUnique({ where: { id }, include: { farmMembers: { select: { farmId: true } }, ownedFarms: { select: { id: true } } } });
+    const user = await this.prisma.user.findUnique({ where: { id }, include: { farmMembers: { select: { farmId: true } }, ownedFarms: { select: { id: true } }, lotMembers: { select: { lot: { select: { farmId: true } } } } } });
     if (!user) throw new NotFoundException('Usuario no encontrado');
     if (actor.role === AppRole.ADMIN_CUMBRES) return user;
     if (user.role === AppRole.ADMIN_CUMBRES) throw new ForbiddenException('Un administrador de finca no puede administrar usuarios de Cumbres Sacras');
     const actorFarms = await this.access.accessibleFarmIds(actor);
-    const userFarms = [...user.farmMembers.map((m) => m.farmId), ...user.ownedFarms.map((f) => f.id)];
+    const userFarms = [...user.farmMembers.map((m) => m.farmId), ...user.ownedFarms.map((f) => f.id), ...user.lotMembers.map((m) => m.lot.farmId)];
     if (!actorFarms || !userFarms.some((farmId) => actorFarms.includes(farmId))) throw new ForbiddenException('No tienes acceso a este usuario');
     return user;
   }

@@ -1,6 +1,6 @@
 import { FarmType, Visibility } from '@prisma/client';
 import { PartialType } from '@nestjs/mapped-types';
-import { IsEnum, IsNumber, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsLatitude, IsLongitude, IsNumber, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateFarmDto {
   @IsOptional()
@@ -21,6 +21,20 @@ export class CreateFarmDto {
   @IsOptional()
   @IsString()
   region?: string;
+
+  @IsOptional()
+  @IsString()
+  village?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @IsLatitude()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @IsLongitude()
+  longitude?: number;
 
   @IsOptional()
   @IsNumber()

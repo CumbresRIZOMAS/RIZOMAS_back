@@ -15,6 +15,12 @@ export class LotsController {
     return this.lots.create(dto, user);
   }
 
+  @Get('lots')
+  @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA, AppRole.TECNICO, AppRole.AGRICULTOR)
+  findAll(@CurrentUser() user: RequestUser) {
+    return this.lots.findAll(user);
+  }
+
   @Get('farms/:farmId/lots')
   findByFarm(@Param('farmId') farmId: string, @CurrentUser() user: RequestUser) {
     return this.lots.findByFarm(farmId, user);
