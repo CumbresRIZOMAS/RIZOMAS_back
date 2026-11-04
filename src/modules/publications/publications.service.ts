@@ -145,12 +145,13 @@ export class PublicationsService {
         select: {
           id: true,
           farmId: true,
-          farm: { select: { name: true, municipality: true, region: true } },
+          farm: { select: { name: true, municipality: true, region: true, farmType: true } },
           title: true,
           description: true,
           region: true,
           quantity: true,
           unit: true,
+          harvest: { select: { crop: { select: { species: true, variety: true } } } },
           publicLocation: true,
           publishedAt: true,
           evidences: { where: { evidence: PUBLISHABLE }, select: { evidence: { select: PUBLIC_EVIDENCE_SELECT } } },
@@ -163,7 +164,7 @@ export class PublicationsService {
       this.prisma.farm.findMany({
         where: { OR: [{ municipality: { not: null } }, { region: { not: null } }] },
         orderBy: [{ region: 'asc' }, { municipality: 'asc' }, { name: 'asc' }],
-        select: { id: true, name: true, municipality: true, region: true },
+        select: { id: true, name: true, municipality: true, region: true, farmType: true },
       }),
     ]);
 
@@ -177,6 +178,13 @@ export class PublicationsService {
         farmName: farm.name,
         municipality: farm.municipality,
         region: publication.region ?? farm.region,
+        farmType: farm.farmType,
+        coffeeTypes: [...new Set(publications
+          .filter((candidate) => candidate.farmId === farmId)
+          .map((candidate) => candidate.harvest?.crop)
+          .filter((crop): crop is NonNullable<typeof crop> => Boolean(crop))
+          .map((crop) => crop.variety?.trim() || crop.species.trim())
+          .filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b, 'es')),
         isPublished: true,
       }];
     });
@@ -194,6 +202,8 @@ export class PublicationsService {
         publicLocation: null,
         publishedAt: null,
         evidences: [],
+        farmType: farm.farmType,
+        coffeeTypes: [],
         isPublished: false,
       }));
 

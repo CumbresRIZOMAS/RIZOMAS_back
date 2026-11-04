@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateLotDto } from './dto/lot.dto';
+import { CreateLotDto, UpdateLotDto } from './dto/lot.dto';
 import { FarmAccessService } from '../../common/services/farm-access.service';
 import { RequestUser } from '../../common/decorators/current-user.decorator';
 
@@ -35,5 +35,13 @@ export class LotsService {
     if (!lot) throw new NotFoundException('Lote no encontrado');
     await this.access.assertAccess(user, lot.farmId);
     return lot;
+  }
+
+  async update(id: string, dto: UpdateLotDto, user: RequestUser) {
+    const lot = await this.prisma.lot.findUnique({ where: { id }, select: { id: true, farmId: true } });
+    if (!lot) throw new NotFoundException('Lote no encontrado');
+    await this.access.assertAccess(user, lot.farmId);
+    const { farmId: _farmId, ...data } = dto;
+    return this.prisma.lot.update({ where: { id }, data: data as never });
   }
 }

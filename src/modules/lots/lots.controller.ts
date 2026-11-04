@@ -1,8 +1,8 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AppRole } from '../../common/enums/app-role.enum';
 import { CurrentUser, RequestUser } from '../../common/decorators/current-user.decorator';
-import { CreateLotDto } from './dto/lot.dto';
+import { CreateLotDto, UpdateLotDto } from './dto/lot.dto';
 import { LotsService } from './lots.service';
 
 @Controller()
@@ -29,5 +29,11 @@ export class LotsController {
   @Get('lots/:id')
   findOne(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     return this.lots.findOne(id, user);
+  }
+
+  @Patch('lots/:id')
+  @Roles(AppRole.ADMIN_CUMBRES, AppRole.ADMIN_FINCA)
+  update(@Param('id') id: string, @Body() dto: UpdateLotDto, @CurrentUser() user: RequestUser) {
+    return this.lots.update(id, dto, user);
   }
 }

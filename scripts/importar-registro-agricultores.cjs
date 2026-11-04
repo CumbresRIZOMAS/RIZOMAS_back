@@ -15,8 +15,7 @@ function normalize(value) {
   return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('es');
 }
 function farmName(value) {
-  const separator = String(value ?? '').indexOf(' - ');
-  return separator >= 0 ? String(value).slice(separator + 3).trim() : String(value ?? '').trim();
+  return String(value ?? '').trim();
 }
 function farmNameKey(value) { return normalize(farmName(value)); }
 function coordinateKey(row, prefix = '') {
@@ -33,6 +32,12 @@ function optionalAge(value) {
   const age = Number.parseInt(String(value ?? '').trim(), 10);
   return Number.isInteger(age) && age >= 0 && age <= 130 ? age : undefined;
 }
+function normalizedPhone(value) {
+  const number = digits(value);
+  if (/^3\d{9}$/.test(number)) return `+57${number}`;
+  if (/^573\d{9}$/.test(number)) return `+${number}`;
+  return undefined;
+}
 
 async function main() {
   if (!inputPath || !fs.existsSync(inputPath)) throw new Error('No se recibió el archivo temporal de registros');
@@ -44,11 +49,7 @@ async function main() {
     farmGroups.set(key, [...(farmGroups.get(key) ?? []), row]);
   }
 
-  const [existingFarms, existingUsers] = await Promise.all([
-    prisma.farm.findMany({ select: { id: true, name: true } }),
-    prisma.user.findMany({ select: { id: true, name: true } }),
-  ]);
-  const usersByName = new Map(existingUsers.map((user) => [normalize(user.name), user.id]));
+  const existingFarms = await prisma.farm.findMany({ select: { id: true, name: true } });
   const farmsByName = new Map();
   for (const farm of existingFarms) {
     const key = farmNameKey(farm.name);
@@ -83,12 +84,6 @@ async function main() {
         latitude: coordinateRow.farmLatitude,
         longitude: coordinateRow.farmLongitude,
       };
-      const ownerCandidates = new Set(
-        group
-          .map((row) => usersByName.get(normalize(row.name)))
-          .filter(Boolean),
-      );
-      if (ownerCandidates.size === 1) data.ownerId = [...ownerCandidates][0];
       let farmId = candidates[0] ?? null;
       if (!farmId) {
         const created = await tx.farm.create({ data, select: { id: true } });
@@ -156,7 +151,8 @@ async function main() {
       summary.profiles += 1;
       const profileData = {
         name: optionalText(row.name) ?? profile.name,
-        phone: optionalText(row.phone) ?? profile.phone,
+        phone: normalizedPhone(row.phone) ?? profile.phone,
+        documentNumber: digits(row.documentNumber) || profile.documentNumber,
         email: optionalText(row.email) ?? profile.email,
         associationCode: optionalText(row.associationCode) ?? profile.associationCode,
         associationName: optionalText(row.associationName) ?? profile.associationName,

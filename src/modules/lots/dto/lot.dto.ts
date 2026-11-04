@@ -1,4 +1,5 @@
 import { IsLatitude, IsLongitude, IsNumber, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
+import { PartialType } from '@nestjs/mapped-types';
 
 export class CreateLotDto {
   @IsUUID()
@@ -29,3 +30,5 @@ export class CreateLotDto {
   @IsObject()
   location?: Record<string, unknown>;
 }
+
+export class UpdateLotDto extends PartialType(CreateLotDto) {}
