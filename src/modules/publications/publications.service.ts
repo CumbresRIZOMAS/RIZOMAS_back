@@ -7,6 +7,7 @@ import { RequestUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreatePublicationDto, PublishPublicationDto, SetPublicationEvidencesDto, UpdatePublicationDto } from './dto/publication.dto';
 import { PUBLIC_EVIDENCE_SELECT } from '../evidence/public-evidence';
+import { publicFarmName } from './public-farm-name';
 import { publicationForTraceability, publicCoffeeProcessSelect, toPublicFarmTraceability, toPublicTraceability } from './public-traceability';
 
 /** Una foto sale en el portal solo si se aprobó en moderación y se autorizó como pública. */
@@ -175,7 +176,7 @@ export class PublicationsService {
       representedFarms.add(farmId);
       return [{
         ...publication,
-        farmName: farm.name,
+        farmName: publicFarmName(farm.name),
         municipality: farm.municipality,
         region: publication.region ?? farm.region,
         farmType: farm.farmType,
@@ -192,8 +193,8 @@ export class PublicationsService {
       .filter((farm) => Boolean(farm.municipality?.trim() || farm.region?.trim()) && !farmsWithPublication.has(farm.id))
       .map((farm) => ({
         id: `farm:${farm.id}`,
-        title: farm.name,
-        farmName: farm.name,
+        title: publicFarmName(farm.name),
+        farmName: publicFarmName(farm.name),
         description: null,
         municipality: farm.municipality,
         region: farm.region,

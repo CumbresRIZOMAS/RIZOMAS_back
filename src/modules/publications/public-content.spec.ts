@@ -1,6 +1,7 @@
 import { EvidenceService } from '../evidence/evidence.service';
 import { PUBLIC_EVIDENCE_SELECT } from '../evidence/public-evidence';
 import { PublicationsService } from './publications.service';
+import { publicFarmName } from './public-farm-name';
 import { publicationForTraceability, toPublicTraceability } from './public-traceability';
 
 /** Campos que nunca pueden salir en endpoints públicos (ASR-15). */
@@ -41,7 +42,7 @@ describe('contenido público sin datos privados', () => {
 
     expect(farms).toHaveBeenCalledWith(expect.objectContaining({
       where: { OR: [{ municipality: { not: null } }, { region: { not: null } }] },
-      select: { id: true, name: true, municipality: true, region: true },
+      select: { id: true, name: true, municipality: true, region: true, farmType: true },
     }));
     expect(origins).toEqual([expect.objectContaining({ id: 'farm:f1', farmName: 'El Rosal', title: 'El Rosal', municipality: 'Pitalito', region: 'Huila', isPublished: false })]);
     expect(JSON.stringify(origins)).not.toContain('exactLocation');
@@ -58,6 +59,31 @@ describe('contenido público sin datos privados', () => {
     expect(origins).toHaveLength(2);
     expect(origins[0]).toMatchObject({ id: 'p2', farmName: 'El Rosal', isPublished: true });
     expect(origins[1]).toMatchObject({ id: 'farm:f2', isPublished: false });
+  });
+});
+
+describe('nombre público de la finca', () => {
+  it('quita el nombre del propietario que trae el registro de agricultores', () => {
+    expect(publicFarmName('ALBA LUZ PROANOS - ESPERANZA')).toBe('ESPERANZA');
+    expect(publicFarmName('ALBA NOR BUESAQUILLO/ROBERT RIVERA - VILLA VISTA')).toBe('VILLA VISTA');
+    expect(publicFarmName('ALEXANDER OME VELEZ -  VIDA ALEJANDRA')).toBe('VIDA ALEJANDRA');
+  });
+
+  it('deja igual los nombres sin propietario', () => {
+    expect(publicFarmName('El Rosal')).toBe('El Rosal');
+    expect(publicFarmName('Finca La-Esperanza')).toBe('Finca La-Esperanza');
+  });
+
+  it('el portal público nunca recibe el nombre del propietario', async () => {
+    const publication = { id: 'p1', farmId: 'f1', farm: { name: 'ANA PEREZ - EL ROSAL', municipality: 'Pitalito', region: 'Huila' }, title: 'Café', description: null, region: null, quantity: null, unit: null, publicLocation: null, publishedAt: new Date(), evidences: [] };
+    const findMany = jest.fn().mockResolvedValue([publication]);
+    const farms = jest.fn().mockResolvedValue([{ id: 'f2', name: 'JUAN GOMEZ - LA ESPERANZA', municipality: 'Pitalito', region: 'Huila' }]);
+    const service = new PublicationsService({ publication: { findMany }, farm: { findMany: farms } } as never, {} as never, {} as never, {} as never);
+
+    const origins = await service.findPublishedOrigins();
+
+    expect(origins.map((o) => o.farmName)).toEqual(['EL ROSAL', 'LA ESPERANZA']);
+    expect(JSON.stringify(origins)).not.toMatch(/ANA PEREZ|JUAN GOMEZ/);
   });
 });
 
